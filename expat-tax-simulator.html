@@ -351,6 +351,29 @@
         align-items: center;
       }
 
+      .nav-meta {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .nav-chip {
+        font-size: 11px;
+        color: var(--text2);
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      .nav-chip.accent {
+        color: var(--blue);
+        border-color: var(--blue2);
+        background: var(--blue3);
+      }
+
       .main-wrap {
         max-width: 1100px;
         margin: 0 auto;
@@ -374,6 +397,18 @@
 
       .save-btn:hover {
         background: #2a8ef0;
+      }
+
+      .ghost-btn {
+        background: transparent;
+        color: var(--text);
+        padding: 9px 18px;
+        border: 1px solid var(--border2);
+      }
+
+      .ghost-btn:hover {
+        border-color: var(--blue);
+        color: var(--blue);
       }
 
       .section-title {
@@ -455,17 +490,158 @@
         margin: 20px 0;
       }
 
+      .hero-card {
+        background:
+          radial-gradient(circle at top left, rgba(74, 158, 255, 0.18), transparent 34%),
+          linear-gradient(145deg, rgba(30, 37, 53, 0.98), rgba(18, 22, 31, 0.98));
+        border: 1px solid var(--border2);
+        border-radius: 18px;
+        padding: 28px;
+        margin-bottom: 18px;
+      }
+
+      .hero-grid {
+        display: grid;
+        grid-template-columns: 1.3fr 0.9fr;
+        gap: 18px;
+        align-items: stretch;
+      }
+
+      .hero-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border: 1px solid var(--border2);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--text2);
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin-bottom: 16px;
+      }
+
+      .hero-title {
+        font-size: 38px;
+        line-height: 1.05;
+        font-weight: 600;
+        max-width: 11ch;
+        margin-bottom: 14px;
+      }
+
+      .hero-copy {
+        color: var(--text2);
+        font-size: 15px;
+        line-height: 1.7;
+        max-width: 58ch;
+      }
+
+      .hero-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 22px;
+      }
+
+      .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin: 18px 0;
+      }
+
+      .feature-card,
+      .support-card,
+      .setup-choice {
+        background: var(--bg2);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+      }
+
+      .feature-card strong,
+      .support-card strong {
+        display: block;
+        margin-bottom: 6px;
+      }
+
+      .support-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+      }
+
+      .setup-choice {
+        cursor: pointer;
+        transition: border-color 0.15s, transform 0.15s, background 0.15s;
+      }
+
+      .setup-choice.active {
+        border-color: var(--blue);
+        background: rgba(74, 158, 255, 0.08);
+      }
+
+      .setup-choice:hover {
+        border-color: var(--border2);
+        transform: translateY(-1px);
+      }
+
+      .journey-list {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+      }
+
+      .journey-step {
+        background: var(--bg2);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+      }
+
+      .journey-step-num {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-family: "IBM Plex Mono", monospace;
+        color: var(--blue);
+        background: var(--blue3);
+        margin-bottom: 12px;
+      }
+
       @media (max-width: 700px) {
         .side-by-side,
         .metric-grid,
         .field-row,
-        .field-row-3 {
+        .field-row-3,
+        .feature-grid,
+        .support-grid,
+        .journey-list,
+        .hero-grid {
           grid-template-columns: 1fr;
         }
 
         .total-banner {
           flex-direction: column;
           text-align: center;
+        }
+
+        .nav {
+          padding: 14px 16px;
+          flex-wrap: wrap;
+        }
+
+        .nav-meta {
+          margin-left: 0;
+        }
+
+        .hero-title {
+          font-size: 30px;
+          max-width: none;
         }
       }
 
@@ -1467,6 +1643,85 @@
         );
       }
 
+      function CountryRequestCard({ compact = false }) {
+        const [country, setCountry] = React.useState("");
+        const [email, setEmail] = React.useState("");
+        const [notes, setNotes] = React.useState("");
+        const [status, setStatus] = React.useState("");
+
+        function submitRequest() {
+          if (!country.trim()) {
+            setStatus("Enter a country to draft the request.");
+            return;
+          }
+          const subject = encodeURIComponent(`Country request: ${country.trim()}`);
+          const body = encodeURIComponent(
+            [
+              "Hi ExpatTax team,",
+              "",
+              `Please add support for ${country.trim()}.`,
+              email.trim() ? `Contact email: ${email.trim()}` : "",
+              notes.trim() ? `Notes: ${notes.trim()}` : "",
+              "",
+              "I would use the calculator for this country.",
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          );
+          window.location.href = `mailto:hello@expattax.app?subject=${subject}&body=${body}`;
+          setStatus("Email draft opened.");
+        }
+
+        return (
+          <div className={compact ? "support-card" : "section-card"} style={compact ? { marginBottom: 0 } : null}>
+            {!compact && <div className="section-title">Need Another Country?</div>}
+            <div style={{ fontSize: 13, color: "var(--text2)", lineHeight: 1.7, marginBottom: 12 }}>
+              If someone needs a country that is not supported yet, they can request it here and open a pre-filled email draft for the team.
+            </div>
+            <div className="field-group">
+              <div className="label">Desired Country</div>
+              <input
+                type="text"
+                value={country}
+                placeholder="e.g. UAE, UK, Singapore"
+                onChange={(e) => setCountry(e.target.value)}
+              />
+            </div>
+            <div className="field-group">
+              <div className="label">Contact Email (optional)</div>
+              <input
+                type="email"
+                value={email}
+                placeholder="name@example.com"
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+            <div className="field-group" style={{ marginBottom: 0 }}>
+              <div className="label">What should support include? (optional)</div>
+              <textarea
+                rows="3"
+                value={notes}
+                placeholder="Residency rules, local tax regime, digital nomad visa, rental treatment..."
+                onChange={(e) => setNotes(e.target.value)}
+              />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginTop: 14, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 11, color: "var(--text3)" }}>
+                Requests draft an email to <span className="mono">hello@expattax.app</span>.
+              </div>
+              <button className="save-btn" onClick={submitRequest}>
+                Request Country
+              </button>
+            </div>
+            {status && (
+              <div style={{ fontSize: 11, color: status.includes("opened") ? "var(--green)" : "var(--orange)", marginTop: 8 }}>
+                {status}
+              </div>
+            )}
+          </div>
+        );
+      }
+
       function parseAmount(raw) {
         // Strip currency symbols, commas (works for both US 1,000 and Indian 1,00,000), spaces
         const cleaned = String(raw)
@@ -1756,6 +2011,154 @@
         );
       }
 
+      function HomePanel({
+        settings,
+        income,
+        setTab,
+        combinedTaxUSD,
+        combinedIncomeUSD,
+      }) {
+        const hasIncome = Object.values(income).some(
+          (v) => typeof v === "number" && v > 0,
+        );
+        const steps = [
+          {
+            title: "Set your filing profile",
+            copy: `Choose ${settings.expatCountry}, filing year, and whether you want to compare FTC-only against FEIE treatment.`,
+          },
+          {
+            title: "Enter income once or by country",
+            copy: "Use combined mode for quick estimates or split the figures when your US and local income streams differ.",
+          },
+          {
+            title: "Review taxes and planning ideas",
+            copy: "See the combined burden, local-country outcome, US residual tax, and planning opportunities in one flow.",
+          },
+        ];
+
+        return (
+          <div className="main-wrap">
+            <div className="hero-card">
+              <div className="hero-grid">
+                <div>
+                  <div className="hero-kicker">US Expat Tax Estimator</div>
+                  <div className="hero-title">
+                    Estimate your US + {settings.expatCountry} tax picture before you file.
+                  </div>
+                  <div className="hero-copy">
+                    ExpatTax helps US taxpayers abroad compare cross-border tax outcomes, pressure-test FEIE versus FTC, and understand where local-country rules shift the answer.
+                  </div>
+                  <div className="hero-actions">
+                    <button className="save-btn" onClick={() => setTab("setup")}>
+                      Start Setup
+                    </button>
+                    <button className="ghost-btn" onClick={() => setTab("income")}>
+                      Enter Income
+                    </button>
+                    {hasIncome && (
+                      <button className="ghost-btn" onClick={() => setTab("results")}>
+                        View Current Estimate
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="support-card" style={{ background: "rgba(255,255,255,0.03)" }}>
+                  <div className="section-title">Current Scenario</div>
+                  <div className="breakdown-row">
+                    <span>Country</span>
+                    <span className="breakdown-val">{settings.expatCountry}</span>
+                  </div>
+                  <div className="breakdown-row">
+                    <span>Filing status</span>
+                    <span className="breakdown-val">
+                      {settings.filingStatus === "mfj" ? "MFJ" : "Single"}
+                    </span>
+                  </div>
+                  <div className="breakdown-row">
+                    <span>US return strategy</span>
+                    <span className="breakdown-val">
+                      {settings.useFEIE ? "FEIE enabled" : "FTC only"}
+                    </span>
+                  </div>
+                  <div className="breakdown-row">
+                    <span>Entry mode</span>
+                    <span className="breakdown-val">
+                      {settings.splitIncomeMode === "combined" ? "Combined" : "By country"}
+                    </span>
+                  </div>
+                  <div className="breakdown-row total">
+                    <span>{hasIncome ? "Current combined tax" : "Ready to model"}</span>
+                    <span className="breakdown-val">
+                      {hasIncome ? fmt(combinedTaxUSD, "USD") : "Start in setup"}
+                    </span>
+                  </div>
+                  {hasIncome && combinedIncomeUSD > 0 && (
+                    <div style={{ marginTop: 10, fontSize: 12, color: "var(--text3)" }}>
+                      Effective combined rate: {pct((combinedTaxUSD / combinedIncomeUSD) * 100)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="journey-list" style={{ marginBottom: 18 }}>
+              {steps.map((step, idx) => (
+                <div key={step.title} className="journey-step">
+                  <div className="journey-step-num">{idx + 1}</div>
+                  <strong>{step.title}</strong>
+                  <div style={{ color: "var(--text2)", fontSize: 13, lineHeight: 1.7, marginTop: 8 }}>
+                    {step.copy}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="feature-grid">
+              <div className="feature-card">
+                <strong>Built for FTC-heavy expat cases</strong>
+                <div style={{ color: "var(--text2)", fontSize: 13, lineHeight: 1.7 }}>
+                  Model local-country tax first, then see how much of it actually offsets US liability.
+                </div>
+              </div>
+              <div className="feature-card">
+                <strong>FEIE is easy to compare</strong>
+                <div style={{ color: "var(--text2)", fontSize: 13, lineHeight: 1.7 }}>
+                  Switch the US return treatment in setup instead of hunting for a buried checkbox.
+                </div>
+              </div>
+              <div className="feature-card">
+                <strong>Planning stays close to the numbers</strong>
+                <div style={{ color: "var(--text2)", fontSize: 13, lineHeight: 1.7 }}>
+                  Once income is entered, the planning tab points to the strategies your current scenario actually triggers.
+                </div>
+              </div>
+            </div>
+
+            <div className="side-by-side">
+              <div className="section-card">
+                <div className="section-title">Supported Today</div>
+                <div className="support-grid">
+                  <div className="support-card">
+                    <strong>India</strong>
+                    <div style={{ color: "var(--text2)", fontSize: 13, lineHeight: 1.7 }}>
+                      New vs old regime, FTC interplay, spouse splitting, local-property rules, and planning prompts.
+                    </div>
+                  </div>
+                  <div className="support-card">
+                    <strong>Malaysia</strong>
+                    <div style={{ color: "var(--text2)", fontSize: 13, lineHeight: 1.7 }}>
+                      Resident vs non-resident handling, foreign-source nuance, and cross-border estimate comparisons.
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <CountryRequestCard />
+            </div>
+          </div>
+        );
+      }
+
       // ============================================================
       // SETTINGS PANEL
       // ============================================================
@@ -1774,41 +2177,24 @@
               }}
             >
               <div>
-                <div style={{ fontSize: 20, fontWeight: 600 }}>Settings</div>
+                <div style={{ fontSize: 20, fontWeight: 600 }}>Setup</div>
                 <div
                   style={{ fontSize: 13, color: "var(--text3)", marginTop: 2 }}
                 >
-                  Configure tax year, currency, filing options
+                  Set the filing profile, local-country treatment, and comparison mode
                 </div>
               </div>
               <button className="save-btn" onClick={() => onSave(s)}>
-                Save &amp; Calculate →
+                Save Setup →
               </button>
             </div>
 
             <div className="side-by-side">
               <div>
                 <div className="section-card">
-                  <div className="section-title">Property Settings</div>
+                  <div className="section-title">Filing Profile</div>
                   <div className="field-group">
-                    <div className="label">
-                      US Rental Property Price ({s.currency})
-                    </div>
-                    <input
-                      type="number"
-                      min="0"
-                      value={s.usPropertyPrice || 0}
-                      onChange={(e) =>
-                        upd("usPropertyPrice", parseFloat(e.target.value) || 0)
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div className="section-card">
-                  <div className="section-title">Expat Status</div>
-                  <div className="field-group">
-                    <div className="label">Expat Country</div>
+                    <div className="label">Supported Country</div>
                     <select
                       value={s.expatCountry}
                       onChange={(e) => {
@@ -1820,27 +2206,9 @@
                       <option value="Malaysia">Malaysia</option>
                     </select>
                   </div>
-                  <div className="field-group">
-                    <label
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        fontSize: 13,
-                        cursor: "pointer",
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={s.useFEIE}
-                        onChange={(e) => upd("useFEIE", e.target.checked)}
-                      />
-                      Apply FEIE (Foreign Earned Income Exclusion) to US Taxes
-                    </label>
+                  <div style={{ fontSize: 12, color: "var(--text3)", marginTop: -2, marginBottom: 12 }}>
+                    Start with India or Malaysia now. If the country you need is missing, request it below.
                   </div>
-                </div>
-                <div className="section-card">
-                  <div className="section-title">Tax Year &amp; Filing</div>
                   <div className="field-group">
                     <div className="label">
                       {s.expatCountry === "Malaysia" ? "Tax Year (US / Malaysia Calendar)" : "Tax Year (US Calendar / India FY ending Mar 31)"}
@@ -1906,7 +2274,40 @@
                 </div>
 
                 <div className="section-card">
-                  <div className="section-title">Currency</div>
+                  <div className="section-title">US Return Strategy</div>
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <div
+                      className={`setup-choice ${!s.useFEIE ? "active" : ""}`}
+                      onClick={() => upd("useFEIE", false)}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                        <strong>FTC Only</strong>
+                        {!s.useFEIE && <span className="badge badge-blue">Default</span>}
+                      </div>
+                      <div style={{ fontSize: 13, color: "var(--text2)", lineHeight: 1.7, marginTop: 8 }}>
+                        Best when the local-country tax is already high enough to offset most or all US federal tax.
+                      </div>
+                    </div>
+                    <div
+                      className={`setup-choice ${s.useFEIE ? "active" : ""}`}
+                      onClick={() => upd("useFEIE", true)}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                        <strong>Enable FEIE Scenario</strong>
+                        {s.useFEIE && <span className="badge badge-green">Active</span>}
+                      </div>
+                      <div style={{ fontSize: 13, color: "var(--text2)", lineHeight: 1.7, marginTop: 8 }}>
+                        Exclude earned income on the US side first, then see whether FEIE improves the estimate for this scenario.
+                      </div>
+                    </div>
+                  </div>
+                  <div className="info-box" style={{ marginTop: 14 }}>
+                    FEIE is usually worth testing, not assuming. This switch keeps it alongside the US return setup where people expect to make that decision.
+                  </div>
+                </div>
+
+                <div className="section-card">
+                  <div className="section-title">Currency &amp; FX</div>
                   <div className="field-group">
                     <div className="label">Enter income in</div>
                     <select
@@ -2045,7 +2446,7 @@
 
               <div>
                 <div className="section-card">
-                  <div className="section-title">Countries to Compare</div>
+                  <div className="section-title">Scope &amp; Comparison Mode</div>
                   <div
                     style={{
                       display: "flex",
@@ -2108,47 +2509,31 @@
                 </div>
 
                 <div className="section-card">
-                  <div className="section-title">Future Countries</div>
-                  <div className="info-box" style={{ marginTop: 0 }}>
-                    Additional countries can be added by extending the tax
-                    engine. The architecture supports plugging in any country's
-                    tax rules with slabs, surcharges, deductions, and FTC logic.
+                  <div className="section-title">Rental Property Basis</div>
+                  <div className="field-group" style={{ marginBottom: 0 }}>
+                    <div className="label">
+                      US Rental Property Price ({s.currency})
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      value={s.usPropertyPrice || 0}
+                      onChange={(e) =>
+                        upd("usPropertyPrice", parseFloat(e.target.value) || 0)
+                      }
+                    />
                   </div>
-                  <div
-                    style={{
-                      marginTop: 12,
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: 6,
-                    }}
-                  >
-                    {[
-                      "🇬🇧 UK",
-                      "🇸🇬 Singapore",
-                      "🇦🇺 Australia",
-                      "🇨🇦 Canada",
-                      "🇩🇪 Germany",
-                    ].map((c) => (
-                      <span
-                        key={c}
-                        style={{
-                          fontSize: 12,
-                          padding: "4px 10px",
-                          background: "var(--bg4)",
-                          borderRadius: 4,
-                          color: "var(--text3)",
-                        }}
-                      >
-                        {c} (coming soon)
-                      </span>
-                    ))}
+                  <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 8, lineHeight: 1.7 }}>
+                    Used to estimate US depreciation on the rental side of the model.
                   </div>
                 </div>
+
+                <CountryRequestCard compact={true} />
               </div>
             </div>
             <div style={{ textAlign: "right", marginTop: 8 }}>
               <button className="save-btn" onClick={() => onSave(s)}>
-                Save &amp; Calculate →
+                Save Setup →
               </button>
             </div>
           </div>
@@ -2900,7 +3285,7 @@
                     Combined mode:
                   </strong>{" "}
                   One set of income fields applied to both US and {settings.expatCountry} tax calculations. Rental property fields are kept separate since
-                  US and India rules differ. {settings.expatCountry} salary/investment income is split 50/50 between spouses.
+                  US and {settings.expatCountry} rules differ. {settings.expatCountry} salary/investment income is split 50/50 between spouses.
                 </div>
                 <CombinedIncomeFields
                   inc={inc}
@@ -5857,7 +6242,7 @@
       }
 
       function App() {
-        const [tab, setTab] = React.useState("income");
+        const [tab, setTab] = React.useState("home");
         const [settings, setSettings] = usePersisted(
           "expattax_settings",
           DEFAULT_SETTINGS,
@@ -6149,46 +6534,48 @@
           <div>
             <div className="nav">
               <div className="nav-logo">⬡ ExpatTax</div>
-              {["income", "results", "planning", "settings"].map((t) => (
+              {[
+                { id: "home", label: "Overview" },
+                { id: "setup", label: "Setup" },
+                { id: "income", label: "Income" },
+                { id: "results", label: "Results" },
+                { id: "planning", label: "Planning" },
+              ].map((item) => (
                 <button
-                  key={t}
-                  className={`tab-btn ${tab === t ? "active" : ""}`}
-                  onClick={() => setTab(t)}
+                  key={item.id}
+                  className={`tab-btn ${tab === item.id ? "active" : ""}`}
+                  onClick={() => setTab(item.id)}
                 >
-                  {t === "planning"
-                    ? "💡 Planning"
-                    : t.charAt(0).toUpperCase() + t.slice(1)}
+                  {item.label}
                 </button>
               ))}
-              <div
-                style={{
-                  marginLeft: "auto",
-                  fontSize: 12,
-                  color: "var(--text3)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-              >
-                <span>FY {taxYear}</span>
-                <span>|</span>
-                <span>{expatCountry === "Malaysia" ? "RM" : "₹"}{expatToUsd}/$1</span>
-                <span>|</span>
-                <span>
+              <div className="nav-meta">
+                <span className="nav-chip">FY {taxYear}</span>
+                <span className="nav-chip">{expatCountry}</span>
+                <span className="nav-chip">
                   {settings.filingStatus === "mfj" ? "MFJ" : "Single"}
                 </span>
-                <span>|</span>
-                <span
-                  style={{
-                    color: isCombined ? "var(--blue)" : "var(--purple)",
-                  }}
-                >
-                  {isCombined ? "Combined" : "By Country"}
+                <span className="nav-chip">
+                  {expatCountry === "Malaysia" ? "RM" : "₹"}
+                  {expatToUsd}/$1
+                </span>
+                <span className="nav-chip accent">
+                  {isCombined ? "Combined mode" : "By-country mode"}
                 </span>
               </div>
             </div>
 
-            {tab === "settings" && (
+            {tab === "home" && (
+              <HomePanel
+                settings={settings}
+                income={income}
+                setTab={setTab}
+                combinedTaxUSD={combinedTaxUSD}
+                combinedIncomeUSD={combinedIncomeUSD}
+              />
+            )}
+
+            {tab === "setup" && (
               <SettingsPanel settings={settings} onSave={handleSaveSettings} />
             )}
 
@@ -6217,8 +6604,7 @@
                       marginTop: 2,
                     }}
                   >
-                    US expat couple · {settings.expatCountry} FTC claimed on US
-                    return
+                    US expat {settings.filingStatus === "mfj" ? "filers" : "taxpayer"} · {settings.expatCountry} FTC claimed on US return
                   </div>
                 </div>
 
