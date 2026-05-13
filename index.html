@@ -1397,6 +1397,45 @@
         return 0.2;
       }
 
+      function calcUSOrdinaryTax(taxableOrdinary, excludedForStacking, brackets) {
+        if (excludedForStacking <= 0) {
+          return calcUSBracketTax(taxableOrdinary, brackets);
+        }
+        return Math.max(
+          0,
+          calcUSBracketTax(taxableOrdinary + excludedForStacking, brackets) -
+            calcUSBracketTax(excludedForStacking, brackets),
+        );
+      }
+
+      function calcUSPrefTax(prefIncome, taxableOrdinary, excludedForStacking, year, mfj) {
+        if (prefIncome <= 0) {
+          return {
+            tax: 0,
+            marginalRate: 0,
+            effectiveRate: 0,
+            stackBase: taxableOrdinary + excludedForStacking,
+          };
+        }
+        const thresh0 = mfj ? 94050 : 47025;
+        const thresh15 = mfj ? 583750 : 518900;
+        const stackBase = taxableOrdinary + excludedForStacking;
+        const roomAt0 = Math.max(0, thresh0 - stackBase);
+        const taxedAt0 = Math.min(prefIncome, roomAt0);
+        const after0 = Math.max(0, prefIncome - taxedAt0);
+        const roomAt15 = Math.max(0, thresh15 - Math.max(stackBase, thresh0));
+        const taxedAt15 = Math.min(after0, roomAt15);
+        const taxedAt20 = Math.max(0, after0 - taxedAt15);
+        const tax = taxedAt15 * 0.15 + taxedAt20 * 0.2;
+        const marginalRate = taxedAt20 > 0 ? 0.2 : after0 > 0 ? 0.15 : 0;
+        return {
+          tax,
+          marginalRate,
+          effectiveRate: prefIncome > 0 ? tax / prefIncome : 0,
+          stackBase,
+        };
+      }
+
       function calcUSTax({
         wages,
         businessIncome,
@@ -1420,16 +1459,29 @@
         const stdDed = isMFJ ? td.stdDeduction.mfj : td.stdDeduction.single;
         const personalEx = (td.personalExemption || 0) * (isMFJ ? 2 : 1);
 
-        // Ordinary income items
+        // Treat wages and business income as FEIE-eligible earned income in this simplified model.
+        // The exclusion is split proportionally so the remaining taxable mix stays coherent.
         let feieExclusion = 0;
+        let feieExcludedWages = 0;
+        let feieExcludedBusiness = 0;
         if (useFEIE) {
           const feieLimit =
             year >= 2024 ? 126500 : year === 2023 ? 120000 : 112000;
-          feieExclusion = Math.min(wages, isMFJ ? feieLimit * 2 : feieLimit);
+          const earnedIncomeEligible = Math.max(0, wages) + Math.max(0, businessIncome);
+          feieExclusion = Math.min(
+            earnedIncomeEligible,
+            isMFJ ? feieLimit * 2 : feieLimit,
+          );
+          if (earnedIncomeEligible > 0 && feieExclusion > 0) {
+            feieExcludedWages = feieExclusion * (Math.max(0, wages) / earnedIncomeEligible);
+            feieExcludedBusiness = feieExclusion - feieExcludedWages;
+          }
         }
+        const taxableWages = Math.max(0, wages - feieExcludedWages);
+        const taxableBusinessIncome = Math.max(0, businessIncome - feieExcludedBusiness);
         const ordinaryIncome =
-          Math.max(0, wages - feieExclusion) +
-          businessIncome +
+          taxableWages +
+          taxableBusinessIncome +
           rentalNet +
           interest +
           (ordinaryDividends - qualifiedDividends) +
@@ -1440,15 +1492,10 @@
 
         const deductions = stdDed + personalEx;
         const agi = totalGrossIncome; // simplified (no above-line deductions)
-        const taxableOrdinary = Math.max(0, ordinaryIncome - deductions);
-        const totalTaxable = taxableOrdinary + prefIncome;
+        const taxableOrdinaryPreQBI = Math.max(0, ordinaryIncome - deductions);
 
         // Ordinary bracket tax
-        let ordTax = calcUSBracketTax(taxableOrdinary, brackets);
-
-        // QDI / LTCG preferential tax
-        const ltcgRate = getLTCGRate(totalTaxable, year, isMFJ);
-        const ltcgTax = prefIncome * ltcgRate;
+        let ordTax = calcUSOrdinaryTax(taxableOrdinaryPreQBI, feieExclusion, brackets);
 
         // NIIT
         const niitThresh = isMFJ
@@ -1462,13 +1509,28 @@
 
         // QBI deduction (199A) - simplified: 20% of qualified business income
         const qbiDeduction =
-          (td.qbiRate || 0) * Math.max(0, businessIncome + sec199aDividends);
+          (td.qbiRate || 0) * Math.max(0, taxableBusinessIncome + sec199aDividends);
         // Apply QBI deduction to ordinary income (rough)
-        const adjOrdTax = calcUSBracketTax(
-          Math.max(0, taxableOrdinary - qbiDeduction),
+        const taxableOrdinary = Math.max(0, taxableOrdinaryPreQBI - qbiDeduction);
+        const adjOrdTax = calcUSOrdinaryTax(
+          taxableOrdinary,
+          feieExclusion,
           brackets,
         );
         ordTax = adjOrdTax;
+
+        // QDI / LTCG preferential tax with FEIE stacking
+        const prefTax = calcUSPrefTax(
+          prefIncome,
+          taxableOrdinary,
+          feieExclusion,
+          year,
+          isMFJ,
+        );
+        const ltcgRate = prefTax.marginalRate;
+        const ltcgEffectiveRate = prefTax.effectiveRate;
+        const ltcgTax = prefTax.tax;
+        const totalTaxable = taxableOrdinary + prefIncome;
 
         const grossTax = ordTax + ltcgTax + niitTax;
 
@@ -1494,6 +1556,9 @@
 
         return {
           feieExclusion,
+          feieExcludedWages,
+          feieExcludedBusiness,
+          feieStackingIncome: feieExclusion,
           agi,
           totalGrossIncome,
           deductions,
@@ -1501,6 +1566,7 @@
           totalTaxable,
           ordTax,
           ltcgTax,
+          ltcgEffectiveRate,
           niitTax,
           qbiDeduction,
           grossTax,
@@ -2206,6 +2272,15 @@
         if (usResult) {
           addSection("US RESULT DETAIL");
           addLine("FEIE Exclusion", fmt(usResult.feieExclusion, "USD"));
+          addLine("FEIE Excluded Wages", fmt(usResult.feieExcludedWages || 0, "USD"));
+          addLine(
+            "FEIE Excluded Business Income",
+            fmt(usResult.feieExcludedBusiness || 0, "USD"),
+          );
+          addLine(
+            "FEIE Stacking Income",
+            fmt(usResult.feieStackingIncome || 0, "USD"),
+          );
           addLine("AGI", fmt(usResult.agi, "USD"));
           addLine("Gross Income", fmt(usResult.totalGrossIncome, "USD"));
           addLine("Deductions", fmt(usResult.deductions, "USD"));
@@ -2216,7 +2291,7 @@
           addLine("Ordinary Tax", fmt(usResult.ordTax, "USD"));
           addLine(
             "LTCG / QDI Tax",
-            `${fmt(usResult.ltcgTax, "USD")} at ${pct(usResult.ltcgRate * 100)}`,
+            `${fmt(usResult.ltcgTax, "USD")} | effective ${pct((usResult.ltcgEffectiveRate || 0) * 100)} | marginal up to ${pct(usResult.ltcgRate * 100)}`,
           );
           addLine("NIIT Income", fmt(usResult.niitIncome, "USD"));
           addLine("NIIT Tax", fmt(usResult.niitTax, "USD"));
@@ -5150,11 +5225,15 @@
                     badge = "exempt";
                   } else if (row.type === "ltcg") {
                     const niitOnRow = row.amount * niitFrac * 0.038;
-                    taxAmt = row.amount * r.ltcgRate + niitOnRow;
-                    const allInRate = r.ltcgRate + niitFrac * 0.038;
-                    ratePct = pct(r.ltcgRate * 100);
+                    const prefEffRate =
+                      r.ltcgEffectiveRate !== undefined
+                        ? r.ltcgEffectiveRate
+                        : r.ltcgRate;
+                    taxAmt = row.amount * prefEffRate + niitOnRow;
+                    const allInRate = prefEffRate + niitFrac * 0.038;
+                    ratePct = pct((r.ltcgRate || 0) * 100) + " marginal";
                     effPct =
-                      niitFrac > 0
+                      niitFrac > 0 || prefEffRate !== r.ltcgRate
                         ? "~" + pct(allInRate * 100) + " incl. NIIT (3.8%)"
                         : null;
                     badge = "pref";
@@ -5495,6 +5574,14 @@
                   Deductions
                 </div>
                 <BRow label="Gross Income (AGI)" value={fmt(r.agi, "USD")} />
+                {r.feieExclusion > 0 && (
+                  <BRow
+                    label="FEIE Exclusion"
+                    value={`(${fmt(r.feieExclusion, "USD")})`}
+                    sub
+                    color="var(--green)"
+                  />
+                )}
                 <BRow
                   label="Standard Deduction"
                   value={`(${fmt(r.stdDed, "USD")})`}
@@ -5548,7 +5635,7 @@
                   value={fmt(r.ordTax, "USD")}
                 />
                 <BRow
-                  label={`LTCG / QDI Tax (${pct(r.ltcgRate * 100)})`}
+                  label={`LTCG / QDI Tax (marginal up to ${pct(r.ltcgRate * 100)})`}
                   value={fmt(r.ltcgTax, "USD")}
                   sub
                 />
@@ -5712,6 +5799,8 @@
 
         // ── flags ─────────────────────────────────────────────────
         const hasWages = wagesUSD > 0;
+        const earnedIncomeUSD = wagesUSD + bizUSD;
+        const hasEarnedIncome = earnedIncomeUSD > 0;
         const hasBiz = bizUSD > 0;
         const hasLTCG = ltcgUSD > 0;
         const hasSTCG = stcgUSD > 0;
@@ -5763,8 +5852,8 @@
         // India interest in NRE: currently taxable in India at top slab; NRE would be exempt
         const indiaNRESaving =
           indiaInterestINR * indiaMarginalSlab * indiaEffMultiplier * 2;
-        // FEIE saving: wages up to $126,500 excluded if applicable
-        const feieExclusion = Math.min(126500, wagesUSD);
+        // FEIE saving: earned income up to $126,500 excluded if applicable
+        const feieExclusion = Math.min(126500, earnedIncomeUSD);
         const feieSaving = feieExclusion * usMarginal; // rough – ignores FTC tradeoff
         // Regime switch saving (India): rough — compare new vs old on per-spouse basis
         let regimeSwitchSavingINR = 0;
@@ -6048,7 +6137,7 @@
               )}
 
               {/* FEIE */}
-              {hasWages && (
+              {hasEarnedIncome && (
                 <OpCard
                   emoji="✈️"
                   title="FEIE vs FTC — Run Both Scenarios"
@@ -6057,13 +6146,13 @@
                   priority="high"
                 >
                   FEIE excludes up to <strong>$126,500 (2024)</strong> of
-                  foreign earned wages. On your wages of <Num v={wagesUSD} />,
+                  foreign earned income. On your earned income of <Num v={earnedIncomeUSD} />,
                   that's a potential exclusion worth ~<Num v={feieSaving} /> in
                   federal tax. <strong>But:</strong> FEIE and FTC can't cover
                   the same income. If your India effective rate exceeds the US
-                  rate on wages (currently {pct(usMarginal * 100)} marginal),
+                  rate on earned income (currently {pct(usMarginal * 100)} marginal),
                   FTC is better — you already have the credit. FEIE becomes
-                  compelling if your India wage tax is low or if you have excess
+                  compelling if your India earned-income tax is low or if you have excess
                   FTC in passive baskets that can't be used anyway. Model both
                   annually.
                 </OpCard>
