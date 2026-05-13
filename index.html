@@ -2011,6 +2011,309 @@
         );
       }
 
+      function normalizeExportText(text) {
+        return String(text || "")
+          .replace(/\u00a0/g, " ")
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .join("\n");
+      }
+
+      function buildExportReport({
+        currentTab,
+        settings,
+        income,
+        usIncome,
+        usResult,
+        indiaResult,
+        totalUSTax,
+        totalIndiaTax,
+        totalIndiaTaxUSD,
+        combinedTaxUSD,
+        combinedIncomeUSD,
+        totalIndiaRentalNetINR,
+        expatToUsd,
+        uiSnapshot,
+      }) {
+        const localCur = settings.expatCountry === "Malaysia" ? "MYR" : "INR";
+        const tabLabel =
+          {
+            home: "Overview",
+            setup: "Setup",
+            income: "Income",
+            results: "Results",
+            planning: "Planning",
+          }[currentTab] || currentTab;
+        const lines = [];
+
+        function addSection(title) {
+          if (lines.length) lines.push("");
+          lines.push(title);
+          lines.push("=".repeat(title.length));
+        }
+
+        function addLine(label, value) {
+          lines.push(`${label}: ${value}`);
+        }
+
+        function fmtInput(value, currency) {
+          const n = value || 0;
+          return `${fmt(n, currency)} (raw ${n})`;
+        }
+
+        addSection("EXPAT TAX CALCULATOR EXPORT");
+        addLine("Generated at", new Date().toISOString());
+        addLine("Current tab", tabLabel);
+
+        addSection("SETTINGS");
+        addLine("Expat country", settings.expatCountry);
+        addLine("Tax year", settings.taxYear);
+        addLine(
+          "US filing status",
+          settings.filingStatus === "mfj" ? "Married Filing Jointly" : "Single",
+        );
+        addLine(
+          "India regime / Malaysia residency",
+          settings.expatCountry === "Malaysia"
+            ? settings.expatTaxRegime
+            : settings.useNewIndia
+              ? "New regime"
+              : "Old regime",
+        );
+        addLine("Use FEIE", settings.useFEIE ? "Yes" : "No");
+        addLine(
+          "Income entry mode",
+          settings.splitIncomeMode === "combined" ? "Combined" : "Separate",
+        );
+        addLine("Show US taxes", settings.includeUS ? "Yes" : "No");
+        addLine("Show expat-country taxes", settings.includeExpat ? "Yes" : "No");
+        addLine("Input currency", settings.currency);
+        addLine("Local FX per USD", `${localCur} ${expatToUsd}`);
+        addLine(
+          "US rental property price",
+          fmtInput(settings.usPropertyPrice || 0, settings.currency),
+        );
+
+        addSection("INCOME ENTRIES");
+        addLine("Wages / Salary", fmtInput(income.wages, settings.currency));
+        addLine(
+          "Business / Self-Employment Income",
+          fmtInput(income.businessIncome, settings.currency),
+        );
+        addLine(
+          "Short-Term Cap Gains",
+          fmtInput(income.shortTermGains, settings.currency),
+        );
+        addLine(
+          "Long-Term Cap Gains",
+          fmtInput(income.longTermGains, settings.currency),
+        );
+        addLine("Interest Income", fmtInput(income.interest, settings.currency));
+        addLine(
+          "Ordinary Dividends",
+          fmtInput(income.ordinaryDividends, settings.currency),
+        );
+        addLine(
+          "Qualified Dividends",
+          fmtInput(income.qualifiedDividends, settings.currency),
+        );
+        addLine(
+          "Exempt-Interest Dividends",
+          fmtInput(income.exemptIntDividends, settings.currency),
+        );
+        addLine(
+          "Section 199A Dividends",
+          fmtInput(income.sec199aDividends, settings.currency),
+        );
+        addLine("US Rental Gross", fmtInput(income.usRentalGross, settings.currency));
+        addLine(
+          "US Rental Mortgage Interest",
+          fmtInput(income.usRentalMortgageInterest, settings.currency),
+        );
+        addLine(
+          "US Rental Property Tax",
+          fmtInput(income.usRentalPropertyTax, settings.currency),
+        );
+        addLine(
+          "US Rental Other Expenses",
+          fmtInput(income.usRentalOtherExpenses, settings.currency),
+        );
+        addLine(
+          `${settings.expatCountry} Rental Gross`,
+          fmtInput(income.indiaRentalGross, settings.currency),
+        );
+        addLine(
+          `${settings.expatCountry} Rental Real-Estate Tax`,
+          fmtInput(income.indiaRentalReTax, settings.currency),
+        );
+        addLine(
+          `${settings.expatCountry} Rental Additional Expenses`,
+          fmtInput(income.indiaRentalAddlExpenses, settings.currency),
+        );
+        addLine(
+          `${settings.expatCountry} Rental Interest`,
+          fmtInput(income.indiaRentalInterest, settings.currency),
+        );
+        addLine(
+          `${settings.expatCountry} Salary`,
+          fmtInput(income.indiaSalary, settings.currency),
+        );
+        addLine(
+          `${settings.expatCountry} Other Income`,
+          fmtInput(income.indiaOtherIncome, settings.currency),
+        );
+
+        addSection("SUMMARY");
+        addLine("Net US Tax Owed", fmt(totalUSTax, "USD"));
+        addLine(`${settings.expatCountry} Tax`, fmt(totalIndiaTax, localCur));
+        addLine(`${settings.expatCountry} Tax in USD`, fmt(totalIndiaTaxUSD, "USD"));
+        addLine("Total Combined Tax", fmt(combinedTaxUSD, "USD"));
+        addLine(
+          "Combined Effective Rate",
+          combinedIncomeUSD > 0 ? pct((combinedTaxUSD / combinedIncomeUSD) * 100) : "N/A",
+        );
+        addLine("Combined Income", fmt(combinedIncomeUSD, "USD"));
+        addLine(
+          "FTC Credit Used",
+          usResult ? fmt(usResult.ftcClaimed, "USD") : "N/A",
+        );
+
+        addSection("US CALCULATION INPUTS");
+        addLine("Wages", fmtInput(usIncome.wages, "USD"));
+        addLine("Business Income", fmtInput(usIncome.businessIncome, "USD"));
+        addLine("Rental Net", fmtInput(usIncome.rentalNet, "USD"));
+        addLine("Interest", fmtInput(usIncome.interest, "USD"));
+        addLine("Ordinary Dividends", fmtInput(usIncome.ordinaryDividends, "USD"));
+        addLine("Qualified Dividends", fmtInput(usIncome.qualifiedDividends, "USD"));
+        addLine("Exempt-Interest Dividends", fmtInput(usIncome.exemptIntDividends, "USD"));
+        addLine("Section 199A Dividends", fmtInput(usIncome.sec199aDividends, "USD"));
+        addLine("Long-Term Gains", fmtInput(usIncome.longTermGains, "USD"));
+        addLine("Short-Term Gains", fmtInput(usIncome.shortTermGains, "USD"));
+        addLine("India Tax Paid Credit Input", fmtInput(usIncome.indiaTaxPaid, "USD"));
+
+        if (usResult) {
+          addSection("US RESULT DETAIL");
+          addLine("FEIE Exclusion", fmt(usResult.feieExclusion, "USD"));
+          addLine("AGI", fmt(usResult.agi, "USD"));
+          addLine("Gross Income", fmt(usResult.totalGrossIncome, "USD"));
+          addLine("Deductions", fmt(usResult.deductions, "USD"));
+          addLine("Standard Deduction", fmt(usResult.stdDed, "USD"));
+          addLine("Personal Exemption", fmt(usResult.personalEx, "USD"));
+          addLine("Taxable Ordinary Income", fmt(usResult.taxableOrdinary, "USD"));
+          addLine("Preferred Income (QDI + LTCG)", fmt(usResult.prefIncome, "USD"));
+          addLine("Ordinary Tax", fmt(usResult.ordTax, "USD"));
+          addLine(
+            "LTCG / QDI Tax",
+            `${fmt(usResult.ltcgTax, "USD")} at ${pct(usResult.ltcgRate * 100)}`,
+          );
+          addLine("NIIT Income", fmt(usResult.niitIncome, "USD"));
+          addLine("NIIT Tax", fmt(usResult.niitTax, "USD"));
+          addLine("QBI Deduction", fmt(usResult.qbiDeduction, "USD"));
+          addLine("Tax Before FTC", fmt(usResult.grossTax, "USD"));
+          addLine("FTC Limit", fmt(usResult.ftcLimit, "USD"));
+          addLine("FTC Claimed", fmt(usResult.ftcClaimed, "USD"));
+          addLine("Net US Tax", fmt(usResult.netUSTax, "USD"));
+          addLine("Effective Rate", pct(usResult.effectiveRate));
+          addLine(
+            "Marginal Ordinary Rate",
+            pct((usResult.marginalOrdRate || 0) * 100),
+          );
+        }
+
+        if (indiaResult) {
+          addSection(`${settings.expatCountry.toUpperCase()} CALCULATION DETAIL`);
+          addLine(
+            `${settings.expatCountry} Total Tax`,
+            fmt(indiaResult.total.totalINR, localCur),
+          );
+          addLine(
+            `${settings.expatCountry} Total Cess`,
+            fmt(indiaResult.total.totalCess, localCur),
+          );
+          addLine(
+            `${settings.expatCountry} Total Surcharge`,
+            fmt(indiaResult.total.totalSurcharge, localCur),
+          );
+          addLine(
+            `${settings.expatCountry} Effective Rate`,
+            pct(indiaResult.total.effectiveRate),
+          );
+          addLine(
+            `${settings.expatCountry} Rental Net`,
+            fmt(totalIndiaRentalNetINR, localCur),
+          );
+
+          [
+            ["Spouse 1", indiaResult.spouse1],
+            ["Spouse 2", indiaResult.spouse2],
+          ].forEach(([label, sp]) => {
+            addSection(`${label.toUpperCase()} ${settings.expatCountry.toUpperCase()} DETAIL`);
+            addLine("Ordinary Income", fmt(sp.incomeINR, localCur));
+            addLine("Taxable Ordinary Income", fmt(sp.result.taxableOrdinary, localCur));
+            addLine("Standard Deduction", fmt(sp.result.sd, localCur));
+            addLine("STCG", fmt(sp.result.stcg, localCur));
+            addLine("LTCG Equity", fmt(sp.result.ltcgEquity, localCur));
+            addLine("LTCG Other", fmt(sp.result.ltcgOther, localCur));
+            addLine("Slab Tax", fmt(sp.result.baseTax, localCur));
+            addLine("STCG Tax", fmt(sp.result.stcgTax, localCur));
+            addLine("LTCG Equity Tax", fmt(sp.result.ltcgEquityTax, localCur));
+            addLine("LTCG Other Tax", fmt(sp.result.ltcgOtherTax, localCur));
+            addLine("Surcharge", fmt(sp.result.surcharge, localCur));
+            addLine("Cess", fmt(sp.result.cess, localCur));
+            addLine("Total Tax", fmt(sp.result.total, localCur));
+            if (sp.result.rates?.stcgEquityRate !== undefined)
+              addLine("STCG Rate", pct(sp.result.rates.stcgEquityRate * 100));
+            if (sp.result.rates?.ltcgEquityRate !== undefined)
+              addLine("LTCG Equity Rate", pct(sp.result.rates.ltcgEquityRate * 100));
+            if (sp.result.rates?.ltcgOtherRate !== undefined)
+              addLine("LTCG Other Rate", pct(sp.result.rates.ltcgOtherRate * 100));
+            if (sp.result.ltcgEquityExemption !== undefined)
+              addLine(
+                "LTCG Equity Exemption",
+                fmt(sp.result.ltcgEquityExemption, localCur),
+              );
+          });
+
+          ["indiaPropertyDetail", "usPropertyDetail"].forEach((key) => {
+            const detail = indiaResult[key];
+            if (!detail) return;
+            addSection(`${detail.label.toUpperCase()} DETAIL`);
+            addLine("Gross Rent", fmt(detail.grossRent, localCur));
+            addLine("Real-Estate Tax", fmt(detail.reTax, localCur));
+            addLine("Additional Expenses", fmt(detail.additionalExpenses, localCur));
+            addLine("Interest", fmt(detail.interest, localCur));
+            if (detail.revenueAfterExpenses !== undefined)
+              addLine("Revenue After Expenses", fmt(detail.revenueAfterExpenses, localCur));
+            if (detail.profitAfterReTax !== undefined)
+              addLine("Profit After RE Tax", fmt(detail.profitAfterReTax, localCur));
+            if (detail.stdDeduction30 !== undefined)
+              addLine("30% Standard Deduction", fmt(detail.stdDeduction30, localCur));
+            if (detail.profitAfterSD !== undefined)
+              addLine("Profit After Standard Deduction", fmt(detail.profitAfterSD, localCur));
+            if (detail.netAfterInterest !== undefined)
+              addLine("Net After Interest", fmt(detail.netAfterInterest, localCur));
+          });
+        }
+
+        addSection("VISIBLE UI SNAPSHOT");
+        lines.push(uiSnapshot || "No UI snapshot captured.");
+
+        return lines.join("\n");
+      }
+
+      function downloadTextReport(filename, text) {
+        const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+
       function HomePanel({
         settings,
         income,
@@ -6243,6 +6546,7 @@
 
       function App() {
         const [tab, setTab] = React.useState("home");
+        const appRef = React.useRef(null);
         const [settings, setSettings] = usePersisted(
           "expattax_settings",
           DEFAULT_SETTINGS,
@@ -6530,8 +6834,33 @@
           : (usResult ? usResult.totalGrossIncome : 0) +
             indiaTotalIncomeINR / expatToUsd;
 
+        function handleExportReport() {
+          const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+          const uiSnapshot = normalizeExportText(
+            (appRef.current && (appRef.current.innerText || appRef.current.textContent)) ||
+              "",
+          );
+          const report = buildExportReport({
+            currentTab: tab,
+            settings,
+            income,
+            usIncome,
+            usResult,
+            indiaResult,
+            totalUSTax,
+            totalIndiaTax,
+            totalIndiaTaxUSD,
+            combinedTaxUSD,
+            combinedIncomeUSD,
+            totalIndiaRentalNetINR,
+            expatToUsd,
+            uiSnapshot,
+          });
+          downloadTextReport(`expattax-export-${stamp}.txt`, report);
+        }
+
         return (
-          <div>
+          <div ref={appRef}>
             <div className="nav">
               <div className="nav-logo">⬡ ExpatTax</div>
               {[
@@ -6562,6 +6891,13 @@
                 <span className="nav-chip accent">
                   {isCombined ? "Combined mode" : "By-country mode"}
                 </span>
+                <button
+                  className="ghost-btn"
+                  onClick={handleExportReport}
+                  style={{ padding: "7px 12px", fontSize: 12 }}
+                >
+                  Export TXT
+                </button>
               </div>
             </div>
 
