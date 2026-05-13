@@ -1532,6 +1532,7 @@
         useNewIndia: true,
         expatTaxRegime: "resident", // 'resident' or 'non-resident'
         expatCountry: "India", // 'India' or 'Malaysia'
+        territorialForeignIncomeExempt: true,
         useFEIE: false,
         splitIncomeMode: "combined", // 'combined' or 'separate'
         includeExpat: true,
@@ -2037,6 +2038,8 @@
         uiSnapshot,
       }) {
         const localCur = settings.expatCountry === "Malaysia" ? "MYR" : "INR";
+        const taxesGlobalInvestment = settings.expatCountry === "India";
+        const taxesWorldwideProperty = settings.expatCountry === "India";
         const tabLabel =
           {
             home: "Overview",
@@ -2081,6 +2084,14 @@
               ? "New regime"
               : "Old regime",
         );
+        if (settings.expatCountry === "Malaysia") {
+          addLine(
+            "Malaysia foreign-source treatment",
+            settings.territorialForeignIncomeExempt
+              ? "Exclude foreign-source income from Malaysia tax"
+              : "Tax shared combined income in Malaysia view",
+          );
+        }
         addLine("Use FEIE", settings.useFEIE ? "Yes" : "No");
         addLine(
           "Income entry mode",
@@ -2243,6 +2254,12 @@
             `${settings.expatCountry} Rental Net`,
             fmt(totalIndiaRentalNetINR, localCur),
           );
+          if (settings.expatCountry === "Malaysia") {
+            addLine(
+              "Territorial treatment note",
+              "Foreign-source US investment and rental income excluded from Malaysia tax output",
+            );
+          }
 
           [
             ["Spouse 1", indiaResult.spouse1],
@@ -2278,6 +2295,7 @@
           ["indiaPropertyDetail", "usPropertyDetail"].forEach((key) => {
             const detail = indiaResult[key];
             if (!detail) return;
+            if (key === "usPropertyDetail" && !taxesWorldwideProperty) return;
             addSection(`${detail.label.toUpperCase()} DETAIL`);
             addLine("Gross Rent", fmt(detail.grossRent, localCur));
             addLine("Real-Estate Tax", fmt(detail.reTax, localCur));
@@ -2608,6 +2626,42 @@
                     FEIE is usually worth testing, not assuming. This switch keeps it alongside the US return setup where people expect to make that decision.
                   </div>
                 </div>
+
+                {s.expatCountry === "Malaysia" && (
+                  <div className="section-card">
+                    <div className="section-title">Malaysia Source Treatment</div>
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <div
+                        className={`setup-choice ${s.territorialForeignIncomeExempt ? "active" : ""}`}
+                        onClick={() => upd("territorialForeignIncomeExempt", true)}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                          <strong>Territorial: Exclude foreign-source income</strong>
+                          {s.territorialForeignIncomeExempt && (
+                            <span className="badge badge-blue">Recommended</span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 13, color: "var(--text2)", lineHeight: 1.7, marginTop: 8 }}>
+                          Use this when US wages, US investments, and US rental income should stay out of the Malaysia tax calculation.
+                        </div>
+                      </div>
+                      <div
+                        className={`setup-choice ${!s.territorialForeignIncomeExempt ? "active" : ""}`}
+                        onClick={() => upd("territorialForeignIncomeExempt", false)}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                          <strong>Include shared combined income locally</strong>
+                          {!s.territorialForeignIncomeExempt && (
+                            <span className="badge badge-green">Active</span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 13, color: "var(--text2)", lineHeight: 1.7, marginTop: 8 }}>
+                          Use this only when the combined wages or business income should also be treated as Malaysia-source for the local tax side.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="section-card">
                   <div className="section-title">Currency &amp; FX</div>
@@ -3587,7 +3641,11 @@
                   <strong style={{ color: "var(--text2)" }}>
                     Combined mode:
                   </strong>{" "}
-                  One set of income fields applied to both US and {settings.expatCountry} tax calculations. Rental property fields are kept separate since
+                  {settings.expatCountry === "Malaysia" &&
+                  settings.territorialForeignIncomeExempt
+                    ? `Shared US income stays on the US side. Only explicit Malaysia-source rental or local-country fields feed the Malaysia tax result.`
+                    : `One set of income fields applied to both US and ${settings.expatCountry} tax calculations.`}{" "}
+                  Rental property fields are kept separate since
                   US and {settings.expatCountry} rules differ. {settings.expatCountry} salary/investment income is split 50/50 between spouses.
                 </div>
                 <CombinedIncomeFields
@@ -3633,6 +3691,8 @@
         const foreignCur = settings.expatCountry === "Malaysia" ? "MYR" : "INR";
         const fmtI = (n) => fmt(n, foreignCur);
         const fmtU = (n) => fmt(n / inrToUsd, "USD");
+        const taxesGlobalInvestment = settings.expatCountry === "India";
+        const taxesWorldwideProperty = settings.expatCountry === "India";
 
         // Build per-income-type rows with actual India tax rates
         const sp1rates = result.spouse1.result.rates || {};
@@ -3664,7 +3724,7 @@
               type: "slab",
               badge: "ord",
             });
-          if ((incomeINR.interest || 0) > 0)
+          if (taxesGlobalInvestment && (incomeINR.interest || 0) > 0)
             incomeRows.push({
               label: "Interest Income",
               amount: incomeINR.interest,
@@ -3672,7 +3732,7 @@
               type: "slab",
               badge: "ord",
             });
-          if ((incomeINR.dividends || 0) > 0)
+          if (taxesGlobalInvestment && (incomeINR.dividends || 0) > 0)
             incomeRows.push({
               label: "Dividends",
               amount: incomeINR.dividends,
@@ -3688,7 +3748,7 @@
               type: "slab",
               badge: "ord",
             });
-          if ((incomeINR.stcg || 0) > 0)
+          if (taxesGlobalInvestment && (incomeINR.stcg || 0) > 0)
             incomeRows.push({
               label: "Short-Term Cap Gains (equity)",
               amount: incomeINR.stcg,
@@ -3697,7 +3757,7 @@
               badge: "stcg",
               rate: sp1rates.stcgEquityRate,
             });
-          if ((incomeINR.ltcgEquity || 0) > 0)
+          if (taxesGlobalInvestment && (incomeINR.ltcgEquity || 0) > 0)
             incomeRows.push({
               label: "Long-Term Cap Gains (equity)",
               amount: incomeINR.ltcgEquity,
@@ -3825,6 +3885,12 @@
                   FY {settings.taxYear}–{String(settings.taxYear + 1).slice(2)}{" "}
                   • Split equally between spouses
                 </div>
+                {settings.expatCountry === "Malaysia" && (
+                  <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>
+                    Territorial treatment applied: foreign-source US investment and
+                    rental income is excluded from the Malaysia tax view.
+                  </div>
+                )}
               </div>
               <span
                 className="badge badge-orange"
@@ -4129,7 +4195,7 @@
               const indiaP = result.indiaPropertyDetail;
               const usP = result.usPropertyDetail;
               const hasIndiaProperty = indiaP && indiaP.grossRent > 0;
-              const hasUSProperty = usP && usP.grossRent > 0;
+              const hasUSProperty = taxesWorldwideProperty && usP && usP.grossRent > 0;
               const hasAnyRental = hasIndiaProperty || hasUSProperty;
               const totalRentalNet = result.totalRentalNetINR || 0;
               const totalGrossRent =
@@ -4308,11 +4374,15 @@
                         lineHeight: 1.7,
                       }}
                     >
-                      <strong>No rental income entered.</strong> Both {settings.expatCountry} and
-                      US rental property income is taxable in {settings.expatCountry} under local
-                      property rules. Enter rental data in the{" "}
-                      <strong>Income</strong> tab (US Rental and/or {settings.expatCountry} Rental
-                      sections) to see the breakdown.
+                      <strong>No rental income entered.</strong>{" "}
+                      {settings.expatCountry === "India"
+                        ? `Both ${settings.expatCountry} and US rental property income are taxable in ${settings.expatCountry} under local property rules.`
+                        : `${settings.expatCountry} rental income is taxed locally, while foreign-source US rental income is excluded in this territorial tax view.`}{" "}
+                      Enter rental data in the <strong>Income</strong> tab
+                      {settings.expatCountry === "India"
+                        ? ` (US Rental and/or ${settings.expatCountry} Rental sections)`
+                        : ` (${settings.expatCountry} Rental section)`}{" "}
+                      to see the breakdown.
                     </div>
                     <div
                       style={{
@@ -4331,23 +4401,39 @@
                         India Rental Tax Rules (applies to ALL properties
                         worldwide):
                       </strong>}
+                      {settings.expatCountry === "Malaysia" && (
+                        <strong style={{ color: "var(--text2)" }}>
+                          Malaysia Territorial Rental Treatment:
+                        </strong>
+                      )}
                       <br />• <strong>No depreciation</strong> — unlike US,
-                      India doesn't allow depreciation on residential rental
-                      property
+                      {settings.expatCountry === "India"
+                        ? " India doesn't allow depreciation on residential rental property"
+                        : " this calculator only includes Malaysia-sourced rental property in the Malaysia tax view"}
                       <br />•{" "}
                       <strong>
-                        30% flat standard deduction (Sec 24a)
+                        {settings.expatCountry === "India"
+                          ? "30% flat standard deduction (Sec 24a)"
+                          : "Foreign-source US rental income"}
                       </strong>{" "}
-                      covers maintenance, repairs, insurance — no receipts
-                      needed
-                      <br />• <strong>Loan interest (Sec 24b)</strong> —
-                      unlimited for let-out property; capped at ₹2L for
-                      self-occupied
-                      <br />• <strong>Municipal taxes</strong> — only deductible
-                      in the year actually paid
-                      <br />• <strong>US property</strong> — same India rules
-                      apply; US depreciation/expenses are ignored for India tax
-                      purposes
+                      {settings.expatCountry === "India"
+                        ? " covers maintenance, repairs, insurance — no receipts needed"
+                        : " is excluded from the Malaysia tax calculation in this territorial model"}
+                      <br />• <strong>Loan interest</strong> —
+                      {settings.expatCountry === "India"
+                        ? " unlimited for let-out property; capped at ₹2L for self-occupied"
+                        : " included only for Malaysia property entered in the local rental section"}
+                      <br />• <strong>Municipal taxes</strong> —
+                      {settings.expatCountry === "India"
+                        ? " only deductible in the year actually paid"
+                        : " applied only to Malaysia property in the local-country calculation"}
+                      {settings.expatCountry === "India" && (
+                        <>
+                          <br />• <strong>US property</strong> — same India rules
+                          apply; US depreciation/expenses are ignored for India tax
+                          purposes
+                        </>
+                      )}
                     </div>
                   </div>
                 );
@@ -4423,7 +4509,9 @@
                           marginTop: 2,
                         }}
                       >
-                        {settings.expatCountry === "India" ? "Sections 22–27 • All properties computed under India rules" : "Computed under Malaysia rules"}
+                        {settings.expatCountry === "India"
+                          ? "Sections 22–27 • All properties computed under India rules"
+                          : "Computed under Malaysia territorial rules"}
                         {hasIndiaProperty && hasUSProperty
                           ? " • 2 properties"
                           : ""}
@@ -6578,9 +6666,12 @@
           includeExpat,
           includeUS,
           splitIncomeMode,
+          territorialForeignIncomeExempt,
         } = settings;
         const expatToUsd = expatCountry === "Malaysia" ? myrToUsd : inrToUsd;
         const isCombined = splitIncomeMode === "combined";
+        const malaysiaTerritorialExempt =
+          expatCountry === "Malaysia" && territorialForeignIncomeExempt;
 
         function toUSD(v) {
           return currency !== "USD" ? v / expatToUsd : v;
@@ -6644,10 +6735,12 @@
         const indiaLtcgINR = toINR(income.longTermGains || 0);
 
         const indiaOrdinaryIncomeINR = isCombined
-          ? toINR(income.wages) +
-            toINR(income.businessIncome) +
-            toINR(income.interest) +
-            toINR(income.ordinaryDividends)
+          ? malaysiaTerritorialExempt
+            ? 0
+            : toINR(income.wages) +
+              toINR(income.businessIncome) +
+              toINR(income.interest) +
+              toINR(income.ordinaryDividends)
           : toINR(income.indiaSalary) + toINR(income.indiaOtherIncome);
 
         const indiaTotalIncomeINR =
@@ -6659,14 +6752,18 @@
         // Per-spouse ordinary income (respects split toggles)
         const includeGlobalInvestment = expatCountry !== 'Malaysia';
         const indiaOrdS1 = isCombined
-          ? spouseVal("wages", 1) +
-            spouseVal("businessIncome", 1) +
-            (includeGlobalInvestment ? toINR(income.interest || 0) / 2 + toINR(income.ordinaryDividends || 0) / 2 : 0)
+          ? malaysiaTerritorialExempt
+            ? 0
+            : spouseVal("wages", 1) +
+              spouseVal("businessIncome", 1) +
+              (includeGlobalInvestment ? toINR(income.interest || 0) / 2 + toINR(income.ordinaryDividends || 0) / 2 : 0)
           : spouseVal("indiaSalary", 1) + spouseVal("indiaOtherIncome", 1);
         const indiaOrdS2 = isCombined
-          ? spouseVal("wages", 2) +
-            spouseVal("businessIncome", 2) +
-            (includeGlobalInvestment ? toINR(income.interest || 0) / 2 + toINR(income.ordinaryDividends || 0) / 2 : 0)
+          ? malaysiaTerritorialExempt
+            ? 0
+            : spouseVal("wages", 2) +
+              spouseVal("businessIncome", 2) +
+              (includeGlobalInvestment ? toINR(income.interest || 0) / 2 + toINR(income.ordinaryDividends || 0) / 2 : 0)
           : spouseVal("indiaSalary", 2) + spouseVal("indiaOtherIncome", 2);
 
         const indiaRentalPerSpouse = totalIndiaRentalNetINR / 2;
@@ -7054,16 +7151,28 @@
                     taxYear={taxYear}
                     incomeINR={{
                       salary: isCombined
-                        ? toINR(income.wages)
+                        ? malaysiaTerritorialExempt
+                          ? 0
+                          : toINR(income.wages)
                         : toINR(income.indiaSalary || 0),
-                      business: isCombined ? toINR(income.businessIncome) : 0,
+                      business:
+                        isCombined && !malaysiaTerritorialExempt
+                          ? toINR(income.businessIncome)
+                          : 0,
                       other: toINR(income.indiaOtherIncome || 0),
                       rental: totalIndiaRentalNetINR,
                       combined: isCombined,
-                      interest: toINR(income.interest || 0),
-                      dividends: toINR(income.ordinaryDividends || 0),
-                      stcg: indiaStcgINR,
-                      ltcgEquity: indiaLtcgINR,
+                      interest:
+                        expatCountry === "India"
+                          ? toINR(income.interest || 0)
+                          : 0,
+                      dividends:
+                        expatCountry === "India"
+                          ? toINR(income.ordinaryDividends || 0)
+                          : 0,
+                      stcg: expatCountry === "India" ? indiaStcgINR : 0,
+                      ltcgEquity:
+                        expatCountry === "India" ? indiaLtcgINR : 0,
                     }}
                   />
                 )}
