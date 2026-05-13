@@ -2259,6 +2259,24 @@
               "Territorial treatment note",
               "Foreign-source US investment and rental income excluded from Malaysia tax output",
             );
+            const excludedMalaysiaRows = [
+              ["US Salary / Wages", income.wages],
+              ["US Business Income", income.businessIncome],
+              ["US Interest Income", income.interest],
+              ["US Dividends", income.ordinaryDividends],
+              ["US Short-Term Cap Gains", income.shortTermGains],
+              ["US Long-Term Cap Gains", income.longTermGains],
+              ["US Rental Gross", income.usRentalGross],
+            ].filter(([, amount]) => (amount || 0) > 0);
+            if (excludedMalaysiaRows.length) {
+              addSection("MALAYSIA EXCLUDED FOREIGN-SOURCE ITEMS");
+              excludedMalaysiaRows.forEach(([label, amount]) => {
+                addLine(
+                  label,
+                  `${fmt(amount, settings.currency)} -> Malaysia tax ${fmt(0, "MYR")}`,
+                );
+              });
+            }
           }
 
           [
@@ -3769,6 +3787,25 @@
             });
         }
         const totalIncomeINR = incomeRows.reduce((s, r) => s + r.amount, 0);
+        const excludedRows = [];
+        if (
+          settings.expatCountry === "Malaysia" &&
+          settings.territorialForeignIncomeExempt &&
+          incomeINR
+        ) {
+          [
+            ["US Salary / Wages", incomeINR.excludedSalary || 0, "Shown for reconciliation only"],
+            ["US Business Income", incomeINR.excludedBusiness || 0, "Shown for reconciliation only"],
+            ["US Interest Income", incomeINR.excludedInterest || 0, "Foreign-source income excluded"],
+            ["US Dividends", incomeINR.excludedDividends || 0, "Foreign-source income excluded"],
+            ["US Short-Term Cap Gains", incomeINR.excludedStcg || 0, "Foreign-source income excluded"],
+            ["US Long-Term Cap Gains", incomeINR.excludedLtcg || 0, "Foreign-source income excluded"],
+            ["US Rental Gross", incomeINR.excludedRental || 0, "Foreign-source property income excluded"],
+          ].forEach(([label, amount, note]) => {
+            if (amount > 0) excludedRows.push({ label, amount, note });
+          });
+        }
+        const totalExcludedINR = excludedRows.reduce((s, r) => s + r.amount, 0);
         const badgeStyleIN = {
           ord: { bg: "var(--bg4)", color: "var(--text3)" },
           stcg: { bg: "var(--orange2)", color: "var(--orange)" },
@@ -3922,6 +3959,161 @@
                 <div className="metric-sub">on combined income</div>
               </div>
             </div>
+
+            {excludedRows.length > 0 && (
+              <div
+                style={{
+                  background: "var(--bg3)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 10,
+                  padding: 18,
+                  marginBottom: 16,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 12,
+                    flexWrap: "wrap",
+                    marginBottom: 12,
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: "var(--text3)",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
+                      }}
+                    >
+                      Visible But Excluded
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: "var(--text2)",
+                        marginTop: 6,
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      These US-source amounts are shown so the Malaysia output can
+                      be audited, but they contribute RM0 to Malaysia tax under the
+                      territorial setting.
+                    </div>
+                  </div>
+                  <span className="badge badge-blue">
+                    {fmtI(totalExcludedINR)} excluded
+                  </span>
+                </div>
+                <div
+                  style={{
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    overflow: "hidden",
+                  }}
+                >
+                  <table
+                    style={{
+                      width: "100%",
+                      borderCollapse: "collapse",
+                      fontSize: 13,
+                      tableLayout: "fixed",
+                    }}
+                  >
+                    <colgroup>
+                      <col style={{ width: "42%" }} />
+                      <col style={{ width: "22%" }} />
+                      <col style={{ width: "16%" }} />
+                      <col style={{ width: "20%" }} />
+                    </colgroup>
+                    <thead>
+                      <tr style={{ background: "var(--bg4)" }}>
+                        {["Income Type", "Amount (total)", "Per Spouse", "Malaysia Tax"].map(
+                          (h) => (
+                            <th
+                              key={h}
+                              style={{
+                                padding: "8px 10px",
+                                textAlign:
+                                  h === "Amount (total)" || h === "Per Spouse"
+                                    ? "right"
+                                    : "left",
+                                fontWeight: 500,
+                                color: "var(--text3)",
+                                fontSize: 11,
+                                textTransform: "uppercase",
+                                letterSpacing: "0.04em",
+                              }}
+                            >
+                              {h}
+                            </th>
+                          ),
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {excludedRows.map((row, i) => (
+                        <tr
+                          key={row.label}
+                          style={{
+                            borderTop: "1px solid var(--border)",
+                            background: i % 2 === 0 ? "transparent" : "var(--bg3)",
+                          }}
+                        >
+                          <td style={{ padding: "9px 10px", fontSize: 12 }}>
+                            <div>{row.label}</div>
+                            <div
+                              style={{
+                                fontSize: 10,
+                                color: "var(--text3)",
+                                marginTop: 3,
+                              }}
+                            >
+                              {row.note}
+                            </div>
+                          </td>
+                          <td
+                            style={{
+                              padding: "9px 10px",
+                              textAlign: "right",
+                              fontFamily: "'IBM Plex Mono',monospace",
+                              fontSize: 12,
+                            }}
+                          >
+                            {fmtI(row.amount)}
+                          </td>
+                          <td
+                            style={{
+                              padding: "9px 10px",
+                              textAlign: "right",
+                              fontFamily: "'IBM Plex Mono',monospace",
+                              fontSize: 12,
+                              color: "var(--text2)",
+                            }}
+                          >
+                            {fmtI(row.amount / 2)}
+                          </td>
+                          <td
+                            style={{
+                              padding: "9px 10px",
+                              fontFamily: "'IBM Plex Mono',monospace",
+                              fontSize: 12,
+                              color: "var(--blue)",
+                            }}
+                          >
+                            RM0
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             {/* Second row: breakdown of tax components */}
             <div
@@ -7173,6 +7365,34 @@
                       stcg: expatCountry === "India" ? indiaStcgINR : 0,
                       ltcgEquity:
                         expatCountry === "India" ? indiaLtcgINR : 0,
+                      excludedSalary:
+                        expatCountry === "Malaysia" && territorialForeignIncomeExempt
+                          ? toINR(income.wages || 0)
+                          : 0,
+                      excludedBusiness:
+                        expatCountry === "Malaysia" && territorialForeignIncomeExempt
+                          ? toINR(income.businessIncome || 0)
+                          : 0,
+                      excludedInterest:
+                        expatCountry === "Malaysia" && territorialForeignIncomeExempt
+                          ? toINR(income.interest || 0)
+                          : 0,
+                      excludedDividends:
+                        expatCountry === "Malaysia" && territorialForeignIncomeExempt
+                          ? toINR(income.ordinaryDividends || 0)
+                          : 0,
+                      excludedStcg:
+                        expatCountry === "Malaysia" && territorialForeignIncomeExempt
+                          ? toINR(income.shortTermGains || 0)
+                          : 0,
+                      excludedLtcg:
+                        expatCountry === "Malaysia" && territorialForeignIncomeExempt
+                          ? toINR(income.longTermGains || 0)
+                          : 0,
+                      excludedRental:
+                        expatCountry === "Malaysia" && territorialForeignIncomeExempt
+                          ? toINR(income.usRentalGross || 0)
+                          : 0,
                     }}
                   />
                 )}
