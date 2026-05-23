@@ -1586,6 +1586,594 @@
         };
       }
 
+      function clampPct(n, fallback = 0) {
+        const v = Number.isFinite(n) ? n : fallback;
+        return Math.max(0, Math.min(100, v));
+      }
+
+      function growByRate(value, pct, yearOffset) {
+        const base = Math.max(0, value || 0);
+        const rate = (Number.isFinite(pct) ? pct : 0) / 100;
+        return base * Math.pow(1 + rate, yearOffset);
+      }
+
+      function resolvePassiveIncome(income) {
+        const passiveIncomeMode =
+          income.passiveIncomeMode === "portfolio" ? "portfolio" : "manual";
+        if (passiveIncomeMode !== "portfolio") {
+          return {
+            passiveIncomeMode,
+            passiveDerived: null,
+            effectiveIncome: { ...income },
+          };
+        }
+
+        const portfolioValue = Math.max(0, income.portfolioValue || 0);
+        const equityPct = clampPct(income.portfolioEquityPct, 60);
+        const fixedIncomePct = Math.max(0, 100 - equityPct);
+        const equityValue = portfolioValue * (equityPct / 100);
+        const fixedIncomeValue = portfolioValue * (fixedIncomePct / 100);
+        const dividendYieldPct = Math.max(0, income.portfolioDividendYieldPct || 0);
+        const qualifiedDividendPct = clampPct(
+          income.portfolioQualifiedDividendPct,
+          85,
+        );
+        const interestYieldPct = Math.max(0, income.portfolioInterestYieldPct || 0);
+        const ltcgYieldPct = Math.max(0, income.portfolioLongTermGainYieldPct || 0);
+        const stcgYieldPct = Math.max(0, income.portfolioShortTermGainYieldPct || 0);
+        const exemptInterestYieldPct = Math.max(
+          0,
+          income.portfolioExemptInterestYieldPct || 0,
+        );
+        const sec199aDividendYieldPct = Math.max(
+          0,
+          income.portfolioSec199aDividendYieldPct || 0,
+        );
+        const expectedEquityGrowthPct = Math.max(
+          0,
+          income.portfolioExpectedEquityGrowthPct || 0,
+        );
+        const expectedFixedIncomeGrowthPct = Math.max(
+          0,
+          income.portfolioExpectedFixedIncomeGrowthPct || 0,
+        );
+
+        const ordinaryDividends = equityValue * (dividendYieldPct / 100);
+        const qualifiedDividends =
+          ordinaryDividends * (qualifiedDividendPct / 100);
+        const interest = fixedIncomeValue * (interestYieldPct / 100);
+        const longTermGains = equityValue * (ltcgYieldPct / 100);
+        const shortTermGains = equityValue * (stcgYieldPct / 100);
+        const exemptIntDividends =
+          fixedIncomeValue * (exemptInterestYieldPct / 100);
+        const sec199aDividends =
+          equityValue * (sec199aDividendYieldPct / 100);
+        const expectedAnnualReturnPct =
+          (equityPct / 100) * expectedEquityGrowthPct +
+          (fixedIncomePct / 100) * expectedFixedIncomeGrowthPct;
+
+        const passiveDerived = {
+          portfolioValue,
+          equityPct,
+          fixedIncomePct,
+          equityValue,
+          fixedIncomeValue,
+          ordinaryDividends,
+          qualifiedDividends,
+          interest,
+          longTermGains,
+          shortTermGains,
+          exemptIntDividends,
+          sec199aDividends,
+          expectedAnnualReturnPct,
+          estimatedPassiveIncome:
+            ordinaryDividends +
+            interest +
+            longTermGains +
+            shortTermGains +
+            exemptIntDividends,
+        };
+
+        return {
+          passiveIncomeMode,
+          passiveDerived,
+          effectiveIncome: {
+            ...income,
+            shortTermGains: shortTermGains,
+            longTermGains: longTermGains,
+            interest: interest,
+            ordinaryDividends: ordinaryDividends,
+            qualifiedDividends: qualifiedDividends,
+            exemptIntDividends: exemptIntDividends,
+            sec199aDividends: sec199aDividends,
+          },
+        };
+      }
+
+      function computeScenario({ settings, income }) {
+        const {
+          passiveIncomeMode,
+          passiveDerived,
+          effectiveIncome,
+        } = resolvePassiveIncome(income);
+        const {
+          inrToUsd,
+          myrToUsd,
+          taxYear,
+          filingStatus,
+          useNewIndia,
+          expatTaxRegime,
+          useFEIE,
+          expatCountry,
+          currency,
+          includeExpat,
+          includeUS,
+          splitIncomeMode,
+          territorialForeignIncomeExempt,
+        } = settings;
+        const expatToUsd = expatCountry === "Malaysia" ? myrToUsd : inrToUsd;
+        const isCombined = splitIncomeMode === "combined";
+        const malaysiaTerritorialExempt =
+          expatCountry === "Malaysia" && territorialForeignIncomeExempt;
+
+        function toUSD(v) {
+          return currency !== "USD" ? v / expatToUsd : v;
+        }
+        function toINR(v) {
+          return currency === "USD" ? v * expatToUsd : v;
+        }
+
+        const usRentalGrossUSD = toUSD(effectiveIncome.usRentalGross);
+        const usPropertyPriceUSD = toUSD(settings.usPropertyPrice || 0);
+        const usAutoDepreciation = (usPropertyPriceUSD * 0.8) / 27.5;
+        const usRentalNet = Math.max(
+          0,
+          usRentalGrossUSD -
+            toUSD(effectiveIncome.usRentalMortgageInterest) -
+            toUSD(effectiveIncome.usRentalPropertyTax) -
+            usAutoDepreciation -
+            toUSD(effectiveIncome.usRentalOtherExpenses),
+        );
+
+        const indiaRentalDetailINR = calcIndiaRentalIncome({
+          grossRent: toINR(effectiveIncome.indiaRentalGross),
+          reTax: toINR(effectiveIncome.indiaRentalReTax),
+          additionalExpenses: toINR(effectiveIncome.indiaRentalAddlExpenses),
+          interest: toINR(effectiveIncome.indiaRentalInterest),
+          isMalaysia: expatCountry === "Malaysia",
+        });
+
+        const usRentalUnderIndiaRulesINR =
+          expatCountry === "Malaysia"
+            ? {
+                grossRent: 0,
+                reTax: 0,
+                additionalExpenses: 0,
+                interest: 0,
+                revenueAfterExpenses: 0,
+                profitAfterReTax: 0,
+                stdDeduction30: 0,
+                profitAfterSD: 0,
+                netAfterInterest: 0,
+              }
+            : calcIndiaRentalIncome({
+                grossRent: toINR(effectiveIncome.usRentalGross),
+                reTax: toINR(effectiveIncome.usRentalPropertyTax),
+                additionalExpenses: 0,
+                interest: toINR(effectiveIncome.usRentalMortgageInterest),
+              });
+
+        const totalIndiaRentalNetINR =
+          indiaRentalDetailINR.netAfterInterest +
+          usRentalUnderIndiaRulesINR.netAfterInterest;
+
+        function spouseVal(fieldKey, spouseNum) {
+          const total = toINR(effectiveIncome[fieldKey] || 0);
+          if (!effectiveIncome[fieldKey + "_split"]) return total / 2;
+          const rawTotal = toINR(income[fieldKey] || 0);
+          const s1Stored = toINR(
+            effectiveIncome[fieldKey + "_s1"] !== undefined
+              ? effectiveIncome[fieldKey + "_s1"]
+              : rawTotal / 2,
+          );
+          const ratioBase = rawTotal > 0 ? rawTotal : total > 0 ? total : 1;
+          const frac = Math.max(0, Math.min(1, s1Stored / ratioBase));
+          const s1 = total * frac;
+          return spouseNum === 1 ? s1 : Math.max(0, total - s1);
+        }
+
+        const indiaStcgINR = toINR(effectiveIncome.shortTermGains || 0);
+        const indiaLtcgINR = toINR(effectiveIncome.longTermGains || 0);
+
+        const indiaOrdinaryIncomeINR = isCombined
+          ? malaysiaTerritorialExempt
+            ? 0
+            : toINR(effectiveIncome.wages) +
+              toINR(effectiveIncome.businessIncome) +
+              toINR(effectiveIncome.interest) +
+              toINR(effectiveIncome.ordinaryDividends)
+          : toINR(effectiveIncome.indiaSalary) +
+            toINR(effectiveIncome.indiaOtherIncome);
+
+        const indiaTotalIncomeINR =
+          indiaOrdinaryIncomeINR +
+          totalIndiaRentalNetINR +
+          indiaStcgINR +
+          indiaLtcgINR;
+
+        const includeGlobalInvestment = expatCountry !== "Malaysia";
+        const indiaOrdS1 = isCombined
+          ? malaysiaTerritorialExempt
+            ? 0
+            : spouseVal("wages", 1) +
+              spouseVal("businessIncome", 1) +
+              (includeGlobalInvestment
+                ? toINR(effectiveIncome.interest || 0) / 2 +
+                  toINR(effectiveIncome.ordinaryDividends || 0) / 2
+                : 0)
+          : spouseVal("indiaSalary", 1) + spouseVal("indiaOtherIncome", 1);
+        const indiaOrdS2 = isCombined
+          ? malaysiaTerritorialExempt
+            ? 0
+            : spouseVal("wages", 2) +
+              spouseVal("businessIncome", 2) +
+              (includeGlobalInvestment
+                ? toINR(effectiveIncome.interest || 0) / 2 +
+                  toINR(effectiveIncome.ordinaryDividends || 0) / 2
+                : 0)
+          : spouseVal("indiaSalary", 2) + spouseVal("indiaOtherIncome", 2);
+
+        const indiaRentalPerSpouse = totalIndiaRentalNetINR / 2;
+        const indiaSpecialS1 = {
+          stcg: isCombined && !includeGlobalInvestment ? 0 : spouseVal("shortTermGains", 1),
+          ltcgEquity:
+            isCombined && !includeGlobalInvestment ? 0 : spouseVal("longTermGains", 1),
+          ltcgOther: 0,
+        };
+        const indiaSpecialS2 = {
+          stcg: isCombined && !includeGlobalInvestment ? 0 : spouseVal("shortTermGains", 2),
+          ltcgEquity:
+            isCombined && !includeGlobalInvestment ? 0 : spouseVal("longTermGains", 2),
+          ltcgOther: 0,
+        };
+
+        const hasSalaryIndia = isCombined
+          ? toINR(effectiveIncome.wages) > 0
+          : toINR(effectiveIncome.indiaSalary) > 0;
+
+        const indiaTd = INDIA_TAX_DATA[taxYear];
+        let indiaResult = null;
+        if (includeExpat) {
+          if (expatCountry === "Malaysia") {
+            const r1 = calcMalaysiaTax(
+              indiaOrdS1 + indiaRentalPerSpouse,
+              expatTaxRegime === "resident",
+              indiaSpecialS1,
+              taxYear,
+            );
+            const r2 = calcMalaysiaTax(
+              indiaOrdS2 + indiaRentalPerSpouse,
+              expatTaxRegime === "resident",
+              indiaSpecialS2,
+              taxYear,
+            );
+            indiaResult = {
+              spouse1: {
+                incomeINR: indiaOrdS1 + indiaRentalPerSpouse,
+                result: r1,
+              },
+              spouse2: {
+                incomeINR: indiaOrdS2 + indiaRentalPerSpouse,
+                result: r2,
+              },
+              total: {
+                totalINR: r1.total + r2.total,
+                totalCess: r1.cess + r2.cess,
+                totalSurcharge: r1.surcharge + r2.surcharge,
+                effectiveRate:
+                  indiaTotalIncomeINR > 0
+                    ? ((r1.total + r2.total) / indiaTotalIncomeINR) * 100
+                    : 0,
+              },
+              indiaPropertyDetail: {
+                ...indiaRentalDetailINR,
+                grossRent: toINR(effectiveIncome.indiaRentalGross),
+                reTax: toINR(effectiveIncome.indiaRentalReTax),
+                additionalExpenses: toINR(effectiveIncome.indiaRentalAddlExpenses),
+                interest: toINR(effectiveIncome.indiaRentalInterest),
+                label: "Malaysia Property",
+              },
+              usPropertyDetail: {
+                ...usRentalUnderIndiaRulesINR,
+                grossRent: toINR(effectiveIncome.usRentalGross),
+                reTax: toINR(effectiveIncome.usRentalPropertyTax),
+                additionalExpenses: 0,
+                interest: toINR(effectiveIncome.usRentalMortgageInterest),
+                label: "US Property (taxed under Malaysia rules)",
+              },
+              totalRentalNetINR: totalIndiaRentalNetINR,
+            };
+          } else if (indiaTd) {
+            const r1 = calcIndiaTax(
+              indiaOrdS1 + indiaRentalPerSpouse,
+              indiaTd,
+              useNewIndia,
+              hasSalaryIndia,
+              indiaSpecialS1,
+              taxYear,
+            );
+            const r2 = calcIndiaTax(
+              indiaOrdS2 + indiaRentalPerSpouse,
+              indiaTd,
+              useNewIndia,
+              hasSalaryIndia,
+              indiaSpecialS2,
+              taxYear,
+            );
+            indiaResult = {
+              spouse1: {
+                incomeINR: indiaOrdS1 + indiaRentalPerSpouse,
+                result: r1,
+              },
+              spouse2: {
+                incomeINR: indiaOrdS2 + indiaRentalPerSpouse,
+                result: r2,
+              },
+              total: {
+                totalINR: r1.total + r2.total,
+                totalCess: r1.cess + r2.cess,
+                totalSurcharge: r1.surcharge + r2.surcharge,
+                effectiveRate:
+                  indiaTotalIncomeINR > 0
+                    ? ((r1.total + r2.total) / indiaTotalIncomeINR) * 100
+                    : 0,
+              },
+              indiaPropertyDetail: {
+                ...indiaRentalDetailINR,
+                grossRent: toINR(effectiveIncome.indiaRentalGross),
+                reTax: toINR(effectiveIncome.indiaRentalReTax),
+                additionalExpenses: toINR(effectiveIncome.indiaRentalAddlExpenses),
+                interest: toINR(effectiveIncome.indiaRentalInterest),
+                label: "India Property",
+              },
+              usPropertyDetail: {
+                ...usRentalUnderIndiaRulesINR,
+                grossRent: toINR(effectiveIncome.usRentalGross),
+                reTax: toINR(effectiveIncome.usRentalPropertyTax),
+                additionalExpenses: 0,
+                interest: toINR(effectiveIncome.usRentalMortgageInterest),
+                label: "US Property (taxed under India rules)",
+              },
+              totalRentalNetINR: totalIndiaRentalNetINR,
+            };
+          }
+        }
+
+        const indiaTaxUSD = indiaResult
+          ? indiaResult.total.totalINR / expatToUsd
+          : 0;
+
+        const usIncome = {
+          wages: toUSD(effectiveIncome.wages),
+          businessIncome: toUSD(effectiveIncome.businessIncome),
+          rentalNet: usRentalNet,
+          rentalMortgageInterest: toUSD(effectiveIncome.usRentalMortgageInterest),
+          rentalPropertyTax: toUSD(effectiveIncome.usRentalPropertyTax),
+          rentalOtherExpenses: toUSD(effectiveIncome.usRentalOtherExpenses),
+          interest: toUSD(effectiveIncome.interest),
+          ordinaryDividends: toUSD(effectiveIncome.ordinaryDividends),
+          qualifiedDividends: toUSD(effectiveIncome.qualifiedDividends),
+          exemptIntDividends: toUSD(effectiveIncome.exemptIntDividends),
+          sec199aDividends: toUSD(effectiveIncome.sec199aDividends),
+          longTermGains: toUSD(effectiveIncome.longTermGains),
+          shortTermGains: toUSD(effectiveIncome.shortTermGains),
+          filingStatus,
+          year: taxYear,
+          indiaTaxPaid: indiaTaxUSD,
+          useFEIE,
+        };
+
+        let usResult = null;
+        if (includeUS && US_TAX_DATA[taxYear]) {
+          usResult = calcUSTax(usIncome);
+        }
+
+        const totalUSTax = usResult ? usResult.netUSTax : 0;
+        const totalIndiaTax = indiaResult ? indiaResult.total.totalINR : 0;
+        const totalIndiaTaxUSD = totalIndiaTax / expatToUsd;
+        const combinedTaxUSD = totalUSTax + totalIndiaTaxUSD;
+        const combinedIncomeUSD = isCombined
+          ? usResult
+            ? usResult.totalGrossIncome
+            : indiaTotalIncomeINR / expatToUsd
+          : (usResult ? usResult.totalGrossIncome : 0) +
+            indiaTotalIncomeINR / expatToUsd;
+
+        return {
+          passiveIncomeMode,
+          passiveDerived,
+          effectiveIncome,
+          expatToUsd,
+          isCombined,
+          malaysiaTerritorialExempt,
+          usRentalGrossUSD,
+          usPropertyPriceUSD,
+          usAutoDepreciation,
+          usRentalNet,
+          indiaRentalDetailINR,
+          usRentalUnderIndiaRulesINR,
+          totalIndiaRentalNetINR,
+          indiaStcgINR,
+          indiaLtcgINR,
+          indiaOrdinaryIncomeINR,
+          indiaTotalIncomeINR,
+          indiaResult,
+          indiaTaxUSD,
+          usIncome,
+          usResult,
+          totalUSTax,
+          totalIndiaTax,
+          totalIndiaTaxUSD,
+          combinedTaxUSD,
+          combinedIncomeUSD,
+        };
+      }
+
+      function buildProjectionRows({ settings, income }) {
+        const years = Math.max(
+          1,
+          Math.min(30, Math.round(income.simulationYears || 10)),
+        );
+        const inflationPct = Math.max(0, income.inflationPct || 0);
+        const earnedIncomeGrowthPct = Math.max(
+          0,
+          income.earnedIncomeGrowthPct || 0,
+        );
+        const rentalGrowthPct = Math.max(
+          0,
+          income.rentalGrowthPct || inflationPct,
+        );
+        const contributionBase = Math.max(0, income.annualPortfolioContribution || 0);
+        const withdrawalBase = Math.max(0, income.annualPortfolioWithdrawal || 0);
+        const rows = [];
+        let portfolioStart = Math.max(0, income.portfolioValue || 0);
+
+        for (let i = 0; i < years; i += 1) {
+          const projectedIncome = {
+            ...income,
+            wages: growByRate(income.wages, earnedIncomeGrowthPct, i),
+            businessIncome: growByRate(
+              income.businessIncome,
+              earnedIncomeGrowthPct,
+              i,
+            ),
+            indiaSalary: growByRate(income.indiaSalary, earnedIncomeGrowthPct, i),
+            indiaOtherIncome: growByRate(
+              income.indiaOtherIncome,
+              inflationPct,
+              i,
+            ),
+            usRentalGross: growByRate(income.usRentalGross, rentalGrowthPct, i),
+            usRentalMortgageInterest: growByRate(
+              income.usRentalMortgageInterest,
+              inflationPct,
+              i,
+            ),
+            usRentalPropertyTax: growByRate(
+              income.usRentalPropertyTax,
+              inflationPct,
+              i,
+            ),
+            usRentalOtherExpenses: growByRate(
+              income.usRentalOtherExpenses,
+              inflationPct,
+              i,
+            ),
+            indiaRentalGross: growByRate(
+              income.indiaRentalGross,
+              rentalGrowthPct,
+              i,
+            ),
+            indiaRentalReTax: growByRate(
+              income.indiaRentalReTax,
+              inflationPct,
+              i,
+            ),
+            indiaRentalAddlExpenses: growByRate(
+              income.indiaRentalAddlExpenses,
+              inflationPct,
+              i,
+            ),
+            indiaRentalInterest: growByRate(
+              income.indiaRentalInterest,
+              inflationPct,
+              i,
+            ),
+            shortTermGains:
+              income.passiveIncomeMode === "portfolio"
+                ? income.shortTermGains || 0
+                : growByRate(income.shortTermGains, inflationPct, i),
+            longTermGains:
+              income.passiveIncomeMode === "portfolio"
+                ? income.longTermGains || 0
+                : growByRate(income.longTermGains, inflationPct, i),
+            interest:
+              income.passiveIncomeMode === "portfolio"
+                ? income.interest || 0
+                : growByRate(income.interest, inflationPct, i),
+            ordinaryDividends:
+              income.passiveIncomeMode === "portfolio"
+                ? income.ordinaryDividends || 0
+                : growByRate(income.ordinaryDividends, inflationPct, i),
+            qualifiedDividends:
+              income.passiveIncomeMode === "portfolio"
+                ? income.qualifiedDividends || 0
+                : growByRate(income.qualifiedDividends, inflationPct, i),
+            exemptIntDividends:
+              income.passiveIncomeMode === "portfolio"
+                ? income.exemptIntDividends || 0
+                : growByRate(income.exemptIntDividends, inflationPct, i),
+            sec199aDividends:
+              income.passiveIncomeMode === "portfolio"
+                ? income.sec199aDividends || 0
+                : growByRate(income.sec199aDividends, inflationPct, i),
+            portfolioValue:
+              income.passiveIncomeMode === "portfolio" ? portfolioStart : 0,
+          };
+
+          const scenario = computeScenario({ settings, income: projectedIncome });
+          const contribution = growByRate(contributionBase, inflationPct, i);
+          const withdrawal = growByRate(withdrawalBase, inflationPct, i);
+          const passiveCashUSD = scenario.usIncome
+            ? scenario.usIncome.interest +
+              scenario.usIncome.ordinaryDividends +
+              scenario.usIncome.exemptIntDividends +
+              scenario.usIncome.longTermGains +
+              scenario.usIncome.shortTermGains
+            : 0;
+          const portfolioEnd =
+            income.passiveIncomeMode === "portfolio"
+              ? Math.max(
+                  0,
+                  portfolioStart *
+                    (1 +
+                      ((scenario.passiveDerived?.expectedAnnualReturnPct || 0) /
+                        100)) +
+                    contribution -
+                    withdrawal,
+                )
+              : 0;
+          const inflationFactor = Math.pow(1 + inflationPct / 100, i + 1);
+
+          rows.push({
+            year: settings.taxYear + i,
+            incomeUSD: scenario.combinedIncomeUSD,
+            usTaxUSD: scenario.totalUSTax,
+            expatTaxUSD: scenario.totalIndiaTaxUSD,
+            combinedTaxUSD: scenario.combinedTaxUSD,
+            effectiveRatePct:
+              scenario.combinedIncomeUSD > 0
+                ? (scenario.combinedTaxUSD / scenario.combinedIncomeUSD) * 100
+                : 0,
+            passiveCashUSD,
+            portfolioStart,
+            portfolioContribution: contribution,
+            portfolioWithdrawal: withdrawal,
+            portfolioEnd,
+            realPortfolioEnd:
+              income.passiveIncomeMode === "portfolio" && inflationFactor > 0
+                ? portfolioEnd / inflationFactor
+                : 0,
+          });
+
+          if (income.passiveIncomeMode === "portfolio") {
+            portfolioStart = portfolioEnd;
+          }
+        }
+
+        return rows;
+      }
+
       // ============================================================
       // DEFAULTS
       // ============================================================
@@ -1607,6 +2195,24 @@
       };
 
       const DEFAULT_INCOME = {
+        passiveIncomeMode: "manual",
+        portfolioValue: 1000000,
+        portfolioEquityPct: 60,
+        portfolioDividendYieldPct: 1.7,
+        portfolioQualifiedDividendPct: 85,
+        portfolioInterestYieldPct: 4.5,
+        portfolioLongTermGainYieldPct: 3.0,
+        portfolioShortTermGainYieldPct: 0.25,
+        portfolioExemptInterestYieldPct: 0,
+        portfolioSec199aDividendYieldPct: 0,
+        portfolioExpectedEquityGrowthPct: 7,
+        portfolioExpectedFixedIncomeGrowthPct: 4,
+        simulationYears: 10,
+        earnedIncomeGrowthPct: 3,
+        rentalGrowthPct: 2.5,
+        inflationPct: 2.5,
+        annualPortfolioContribution: 0,
+        annualPortfolioWithdrawal: 0,
         // US income
         wages: 0,
         businessIncome: 0,
@@ -1856,6 +2462,434 @@
         );
       }
 
+      function ReadOnlyAmountField({ label, value, prefix, note, currency }) {
+        return (
+          <div className="field-group">
+            {label && <div className="label">{label}</div>}
+            <div
+              style={{
+                background: "var(--bg4)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius)",
+                padding: "8px 12px",
+                minHeight: 38,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "flex-end",
+                fontFamily: "'IBM Plex Mono',monospace",
+                color: "var(--text2)",
+              }}
+              >
+              {prefix}
+              {fmtN(value || 0, currency || "USD")}
+            </div>
+            {note && (
+              <div
+                style={{ fontSize: 11, color: "var(--text3)", marginTop: 3 }}
+              >
+                {note}
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      function PassiveIncomeSection({
+        inc,
+        upd,
+        pfx,
+        settings,
+        passiveIncomeMode,
+        passiveDerived,
+        embedded,
+      }) {
+        const isPortfolioMode = passiveIncomeMode === "portfolio";
+        const content = (
+          <>
+            <div style={{ marginBottom: 14 }}>
+              <div className="country-title" style={{ fontSize: 15 }}>
+                Capital Gains &amp; Investment Income
+              </div>
+              <div
+                style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}
+              >
+                {isPortfolioMode
+                  ? "Portfolio assumptions drive the passive income fields used in the tax model"
+                  : `US-recognized preferential rates apply; ${settings.expatCountry} taxes these at slab rates`}
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 12,
+                marginBottom: 16,
+              }}
+            >
+              {[
+                {
+                  value: "manual",
+                  label: "Manual passive income",
+                  note: "Type actual dividends, interest, and gains",
+                },
+                {
+                  value: "portfolio",
+                  label: "Portfolio-driven passive income",
+                  note: "Derive passive income from asset mix and yield assumptions",
+                },
+              ].map((opt) => (
+                <label
+                  key={opt.value}
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    alignItems: "flex-start",
+                    padding: 12,
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    background:
+                      passiveIncomeMode === opt.value
+                        ? "var(--bg3)"
+                        : "transparent",
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="passiveIncomeMode"
+                    checked={passiveIncomeMode === opt.value}
+                    onChange={() => upd("passiveIncomeMode", opt.value)}
+                    style={{ width: "auto", marginTop: 2 }}
+                  />
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{opt.label}</div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "var(--text3)",
+                        marginTop: 2,
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      {opt.note}
+                    </div>
+                  </div>
+                </label>
+              ))}
+            </div>
+
+            {!isPortfolioMode ? (
+              <>
+                <div className="field-row-3">
+                  <NumberInput
+                    label="Short-Term Cap Gains"
+                    value={inc.shortTermGains}
+                    onChange={(v) => upd("shortTermGains", v)}
+                    prefix={pfx}
+                  />
+                  <NumberInput
+                    label="Long-Term Cap Gains"
+                    value={inc.longTermGains}
+                    onChange={(v) => upd("longTermGains", v)}
+                    prefix={pfx}
+                  />
+                  <NumberInput
+                    label="Interest Income"
+                    value={inc.interest}
+                    onChange={(v) => upd("interest", v)}
+                    prefix={pfx}
+                  />
+                </div>
+                <div className="field-row-3">
+                  <NumberInput
+                    label="Total Ordinary Dividends"
+                    value={inc.ordinaryDividends}
+                    onChange={(v) => upd("ordinaryDividends", v)}
+                    prefix={pfx}
+                    note="Includes qualified"
+                  />
+                  <NumberInput
+                    label="Qualified Dividends (subset)"
+                    value={inc.qualifiedDividends}
+                    onChange={(v) => upd("qualifiedDividends", v)}
+                    prefix={pfx}
+                    note={`US: preferential rate; ${settings.expatCountry}: slab rate`}
+                  />
+                  <NumberInput
+                    label="Exempt-Interest Dividends"
+                    value={inc.exemptIntDividends}
+                    onChange={(v) => upd("exemptIntDividends", v)}
+                    prefix={pfx}
+                    note={`US: federal tax-exempt; ${settings.expatCountry}: taxable`}
+                  />
+                </div>
+                <div className="field-row">
+                  <NumberInput
+                    label="Section 199A Dividends"
+                    value={inc.sec199aDividends}
+                    onChange={(v) => upd("sec199aDividends", v)}
+                    prefix={pfx}
+                    note="REIT divs — 20% QBI deduction (US only)"
+                  />
+                  <div />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="field-row">
+                  <NumberInput
+                    label="Portfolio Value"
+                    value={inc.portfolioValue}
+                    onChange={(v) => upd("portfolioValue", v)}
+                    prefix={pfx}
+                  />
+                  <NumberInput
+                    label="Equity Mix (%)"
+                    value={inc.portfolioEquityPct}
+                    onChange={(v) =>
+                      upd("portfolioEquityPct", Math.max(0, Math.min(100, v)))
+                    }
+                    suffix="%"
+                    note={`Fixed income auto-fills the remaining ${Math.max(0, 100 - (inc.portfolioEquityPct || 0))}%`}
+                  />
+                </div>
+                <div className="field-row-3">
+                  <NumberInput
+                    label="Dividend Yield (%)"
+                    value={inc.portfolioDividendYieldPct}
+                    onChange={(v) => upd("portfolioDividendYieldPct", v)}
+                    suffix="%"
+                    note="Applied to equity sleeve"
+                  />
+                  <NumberInput
+                    label="Qualified Dividend Share (%)"
+                    value={inc.portfolioQualifiedDividendPct}
+                    onChange={(v) =>
+                      upd(
+                        "portfolioQualifiedDividendPct",
+                        Math.max(0, Math.min(100, v)),
+                      )
+                    }
+                    suffix="%"
+                    note="Share of dividends taxed as QDI"
+                  />
+                  <NumberInput
+                    label="Interest Yield (%)"
+                    value={inc.portfolioInterestYieldPct}
+                    onChange={(v) => upd("portfolioInterestYieldPct", v)}
+                    suffix="%"
+                    note="Applied to fixed income sleeve"
+                  />
+                </div>
+                <div className="field-row-3">
+                  <NumberInput
+                    label="Long-Term Gain Realization (%)"
+                    value={inc.portfolioLongTermGainYieldPct}
+                    onChange={(v) => upd("portfolioLongTermGainYieldPct", v)}
+                    suffix="%"
+                    note="Taxable annual LTCG realization"
+                  />
+                  <NumberInput
+                    label="Short-Term Gain Realization (%)"
+                    value={inc.portfolioShortTermGainYieldPct}
+                    onChange={(v) => upd("portfolioShortTermGainYieldPct", v)}
+                    suffix="%"
+                    note="Trading / turnover assumption"
+                  />
+                  <NumberInput
+                    label="Exempt-Interest Yield (%)"
+                    value={inc.portfolioExemptInterestYieldPct}
+                    onChange={(v) => upd("portfolioExemptInterestYieldPct", v)}
+                    suffix="%"
+                    note="Municipal-bond sleeve, if any"
+                  />
+                </div>
+                <div className="field-row-3">
+                  <NumberInput
+                    label="Section 199A Dividend Yield (%)"
+                    value={inc.portfolioSec199aDividendYieldPct}
+                    onChange={(v) => upd("portfolioSec199aDividendYieldPct", v)}
+                    suffix="%"
+                    note="REIT / BDC style distributions"
+                  />
+                  <NumberInput
+                    label="Expected Equity Growth (%)"
+                    value={inc.portfolioExpectedEquityGrowthPct}
+                    onChange={(v) => upd("portfolioExpectedEquityGrowthPct", v)}
+                    suffix="%"
+                    note="Used in projection"
+                  />
+                  <NumberInput
+                    label="Expected Fixed Income Growth (%)"
+                    value={inc.portfolioExpectedFixedIncomeGrowthPct}
+                    onChange={(v) => upd("portfolioExpectedFixedIncomeGrowthPct", v)}
+                    suffix="%"
+                    note="Used in projection"
+                  />
+                </div>
+                {passiveDerived && (
+                  <>
+                    <div className="info-box" style={{ marginBottom: 14 }}>
+                      Derived annually from a {passiveDerived.equityPct}% equity /{" "}
+                      {passiveDerived.fixedIncomePct}% fixed-income mix.
+                    </div>
+                    <div className="metric-grid" style={{ marginBottom: 16 }}>
+                      <div className="metric-card">
+                        <div className="metric-label">Equity Sleeve</div>
+                        <div className="metric-val" style={{ fontSize: 18 }}>
+                          {pfx}
+                          {fmtN(passiveDerived.equityValue)}
+                        </div>
+                      </div>
+                      <div className="metric-card">
+                        <div className="metric-label">Fixed Income Sleeve</div>
+                        <div className="metric-val" style={{ fontSize: 18 }}>
+                          {pfx}
+                          {fmtN(passiveDerived.fixedIncomeValue)}
+                        </div>
+                      </div>
+                      <div className="metric-card">
+                        <div className="metric-label">Expected Annual Return</div>
+                        <div className="metric-val" style={{ fontSize: 18 }}>
+                          {pct(passiveDerived.expectedAnnualReturnPct)}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="field-row-3">
+                      <ReadOnlyAmountField
+                        label="Short-Term Cap Gains"
+                        value={passiveDerived.shortTermGains}
+                        prefix={pfx}
+                        currency={settings.currency}
+                      />
+                      <ReadOnlyAmountField
+                        label="Long-Term Cap Gains"
+                        value={passiveDerived.longTermGains}
+                        prefix={pfx}
+                        currency={settings.currency}
+                      />
+                      <ReadOnlyAmountField
+                        label="Interest Income"
+                        value={passiveDerived.interest}
+                        prefix={pfx}
+                        currency={settings.currency}
+                      />
+                    </div>
+                    <div className="field-row-3">
+                      <ReadOnlyAmountField
+                        label="Total Ordinary Dividends"
+                        value={passiveDerived.ordinaryDividends}
+                        prefix={pfx}
+                        currency={settings.currency}
+                        note="Includes qualified dividends"
+                      />
+                      <ReadOnlyAmountField
+                        label="Qualified Dividends (subset)"
+                        value={passiveDerived.qualifiedDividends}
+                        prefix={pfx}
+                        currency={settings.currency}
+                      />
+                      <ReadOnlyAmountField
+                        label="Exempt-Interest Dividends"
+                        value={passiveDerived.exemptIntDividends}
+                        prefix={pfx}
+                        currency={settings.currency}
+                      />
+                    </div>
+                    <div className="field-row">
+                      <ReadOnlyAmountField
+                        label="Section 199A Dividends"
+                        value={passiveDerived.sec199aDividends}
+                        prefix={pfx}
+                        currency={settings.currency}
+                      />
+                      <ReadOnlyAmountField
+                        label="Estimated Passive Income"
+                        value={passiveDerived.estimatedPassiveIncome}
+                        prefix={pfx}
+                        currency={settings.currency}
+                        note="Interest + dividends + realized gains"
+                      />
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          </>
+        );
+        return embedded ? content : <div className="section-card">{content}</div>;
+      }
+
+      function ProjectionAssumptionsCard({ inc, upd, pfx, passiveIncomeMode }) {
+        return (
+          <div className="section-card">
+            <div style={{ marginBottom: 14 }}>
+              <div className="country-title" style={{ fontSize: 15 }}>
+                Multi-Year Simulation Assumptions
+              </div>
+              <div
+                style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}
+              >
+                Used for the year-over-year income, tax, and portfolio projection
+                in Planning.
+              </div>
+            </div>
+            <div className="field-row-3">
+              <NumberInput
+                label="Projection Years"
+                value={inc.simulationYears}
+                onChange={(v) => upd("simulationYears", Math.max(1, Math.min(30, v)))}
+                note="1 to 30 years"
+              />
+              <NumberInput
+                label="Earned Income Growth (%)"
+                value={inc.earnedIncomeGrowthPct}
+                onChange={(v) => upd("earnedIncomeGrowthPct", v)}
+                suffix="%"
+                note="Applies to wages, business, and local salary"
+              />
+              <NumberInput
+                label="Inflation (%)"
+                value={inc.inflationPct}
+                onChange={(v) => upd("inflationPct", v)}
+                suffix="%"
+                note="Used for real portfolio values and expense growth"
+              />
+            </div>
+            <div className="field-row-3">
+              <NumberInput
+                label="Rental Growth (%)"
+                value={inc.rentalGrowthPct}
+                onChange={(v) => upd("rentalGrowthPct", v)}
+                suffix="%"
+                note="Applied to rental revenue"
+              />
+              <NumberInput
+                label="Annual Portfolio Contribution"
+                value={inc.annualPortfolioContribution}
+                onChange={(v) => upd("annualPortfolioContribution", v)}
+                prefix={pfx}
+                note="Inflation-adjusted in projection"
+              />
+              <NumberInput
+                label="Annual Portfolio Withdrawal"
+                value={inc.annualPortfolioWithdrawal}
+                onChange={(v) => upd("annualPortfolioWithdrawal", v)}
+                prefix={pfx}
+                note="Inflation-adjusted in projection"
+              />
+            </div>
+            {passiveIncomeMode !== "portfolio" && (
+              <div className="info-box" style={{ marginTop: 4 }}>
+                Portfolio columns stay off in the projection until you switch
+                passive income to portfolio-driven mode.
+              </div>
+            )}
+          </div>
+        );
+      }
+
       // SpouseField: combined input with optional per-spouse split toggle
       function SpouseField({ label, fieldKey, income, onChange, pfx, note }) {
         const combined = income[fieldKey] || 0;
@@ -2091,6 +3125,9 @@
         currentTab,
         settings,
         income,
+        effectiveIncome,
+        passiveIncomeMode,
+        passiveDerived,
         usIncome,
         usResult,
         indiaResult,
@@ -2101,6 +3138,7 @@
         combinedIncomeUSD,
         totalIndiaRentalNetINR,
         expatToUsd,
+        projectionRows,
         uiSnapshot,
       }) {
         const localCur = settings.expatCountry === "Malaysia" ? "MYR" : "INR";
@@ -2173,73 +3211,99 @@
         );
 
         addSection("INCOME ENTRIES");
-        addLine("Wages / Salary", fmtInput(income.wages, settings.currency));
+        addLine("Passive income source", passiveIncomeMode === "portfolio" ? "Portfolio-derived" : "Manual");
+        addLine("Wages / Salary", fmtInput(effectiveIncome.wages, settings.currency));
         addLine(
           "Business / Self-Employment Income",
-          fmtInput(income.businessIncome, settings.currency),
+          fmtInput(effectiveIncome.businessIncome, settings.currency),
         );
         addLine(
           "Short-Term Cap Gains",
-          fmtInput(income.shortTermGains, settings.currency),
+          fmtInput(effectiveIncome.shortTermGains, settings.currency),
         );
         addLine(
           "Long-Term Cap Gains",
-          fmtInput(income.longTermGains, settings.currency),
+          fmtInput(effectiveIncome.longTermGains, settings.currency),
         );
-        addLine("Interest Income", fmtInput(income.interest, settings.currency));
+        addLine("Interest Income", fmtInput(effectiveIncome.interest, settings.currency));
         addLine(
           "Ordinary Dividends",
-          fmtInput(income.ordinaryDividends, settings.currency),
+          fmtInput(effectiveIncome.ordinaryDividends, settings.currency),
         );
         addLine(
           "Qualified Dividends",
-          fmtInput(income.qualifiedDividends, settings.currency),
+          fmtInput(effectiveIncome.qualifiedDividends, settings.currency),
         );
         addLine(
           "Exempt-Interest Dividends",
-          fmtInput(income.exemptIntDividends, settings.currency),
+          fmtInput(effectiveIncome.exemptIntDividends, settings.currency),
         );
         addLine(
           "Section 199A Dividends",
-          fmtInput(income.sec199aDividends, settings.currency),
+          fmtInput(effectiveIncome.sec199aDividends, settings.currency),
         );
-        addLine("US Rental Gross", fmtInput(income.usRentalGross, settings.currency));
+        addLine("US Rental Gross", fmtInput(effectiveIncome.usRentalGross, settings.currency));
         addLine(
           "US Rental Mortgage Interest",
-          fmtInput(income.usRentalMortgageInterest, settings.currency),
+          fmtInput(effectiveIncome.usRentalMortgageInterest, settings.currency),
         );
         addLine(
           "US Rental Property Tax",
-          fmtInput(income.usRentalPropertyTax, settings.currency),
+          fmtInput(effectiveIncome.usRentalPropertyTax, settings.currency),
         );
         addLine(
           "US Rental Other Expenses",
-          fmtInput(income.usRentalOtherExpenses, settings.currency),
+          fmtInput(effectiveIncome.usRentalOtherExpenses, settings.currency),
         );
         addLine(
           `${settings.expatCountry} Rental Gross`,
-          fmtInput(income.indiaRentalGross, settings.currency),
+          fmtInput(effectiveIncome.indiaRentalGross, settings.currency),
         );
         addLine(
           `${settings.expatCountry} Rental Real-Estate Tax`,
-          fmtInput(income.indiaRentalReTax, settings.currency),
+          fmtInput(effectiveIncome.indiaRentalReTax, settings.currency),
         );
         addLine(
           `${settings.expatCountry} Rental Additional Expenses`,
-          fmtInput(income.indiaRentalAddlExpenses, settings.currency),
+          fmtInput(effectiveIncome.indiaRentalAddlExpenses, settings.currency),
         );
         addLine(
           `${settings.expatCountry} Rental Interest`,
-          fmtInput(income.indiaRentalInterest, settings.currency),
+          fmtInput(effectiveIncome.indiaRentalInterest, settings.currency),
         );
         addLine(
           `${settings.expatCountry} Salary`,
-          fmtInput(income.indiaSalary, settings.currency),
+          fmtInput(effectiveIncome.indiaSalary, settings.currency),
         );
         addLine(
           `${settings.expatCountry} Other Income`,
-          fmtInput(income.indiaOtherIncome, settings.currency),
+          fmtInput(effectiveIncome.indiaOtherIncome, settings.currency),
         );
+        if (passiveIncomeMode === "portfolio" && passiveDerived) {
+          addSection("PORTFOLIO PASSIVE-INCOME ASSUMPTIONS");
+          addLine("Portfolio Value", fmtInput(income.portfolioValue, settings.currency));
+          addLine("Equity Mix", `${pct(income.portfolioEquityPct || 0)}`);
+          addLine("Fixed Income Mix", `${pct(Math.max(0, 100 - (income.portfolioEquityPct || 0)))}`);
+          addLine("Dividend Yield", `${pct(income.portfolioDividendYieldPct || 0)}`);
+          addLine("Qualified Dividend Share", `${pct(income.portfolioQualifiedDividendPct || 0)}`);
+          addLine("Interest Yield", `${pct(income.portfolioInterestYieldPct || 0)}`);
+          addLine("LTCG Realization", `${pct(income.portfolioLongTermGainYieldPct || 0)}`);
+          addLine("STCG Realization", `${pct(income.portfolioShortTermGainYieldPct || 0)}`);
+          addLine("Exempt-Interest Yield", `${pct(income.portfolioExemptInterestYieldPct || 0)}`);
+          addLine("Section 199A Dividend Yield", `${pct(income.portfolioSec199aDividendYieldPct || 0)}`);
+          addLine("Expected Equity Growth", `${pct(income.portfolioExpectedEquityGrowthPct || 0)}`);
+          addLine("Expected Fixed Income Growth", `${pct(income.portfolioExpectedFixedIncomeGrowthPct || 0)}`);
+          addLine("Derived Equity Sleeve", fmt(passiveDerived.equityValue, settings.currency));
+          addLine("Derived Fixed Income Sleeve", fmt(passiveDerived.fixedIncomeValue, settings.currency));
+          addLine("Derived Passive Income", fmt(passiveDerived.estimatedPassiveIncome, settings.currency));
+        }
+        addSection("SIMULATION ASSUMPTIONS");
+        addLine("Projection Years", income.simulationYears || 0);
+        addLine("Earned Income Growth", `${pct(income.earnedIncomeGrowthPct || 0)}`);
+        addLine("Rental Growth", `${pct(income.rentalGrowthPct || 0)}`);
+        addLine("Inflation", `${pct(income.inflationPct || 0)}`);
+        addLine("Annual Portfolio Contribution", fmtInput(income.annualPortfolioContribution, settings.currency));
+        addLine("Annual Portfolio Withdrawal", fmtInput(income.annualPortfolioWithdrawal, settings.currency));
 
         addSection("SUMMARY");
         addLine("Net US Tax Owed", fmt(totalUSTax, "USD"));
@@ -2335,13 +3399,13 @@
               "Foreign-source US investment and rental income excluded from Malaysia tax output",
             );
             const excludedMalaysiaRows = [
-              ["US Salary / Wages", income.wages],
-              ["US Business Income", income.businessIncome],
-              ["US Interest Income", income.interest],
-              ["US Dividends", income.ordinaryDividends],
-              ["US Short-Term Cap Gains", income.shortTermGains],
-              ["US Long-Term Cap Gains", income.longTermGains],
-              ["US Rental Gross", income.usRentalGross],
+              ["US Salary / Wages", effectiveIncome.wages],
+              ["US Business Income", effectiveIncome.businessIncome],
+              ["US Interest Income", effectiveIncome.interest],
+              ["US Dividends", effectiveIncome.ordinaryDividends],
+              ["US Short-Term Cap Gains", effectiveIncome.shortTermGains],
+              ["US Long-Term Cap Gains", effectiveIncome.longTermGains],
+              ["US Rental Gross", effectiveIncome.usRentalGross],
             ].filter(([, amount]) => (amount || 0) > 0);
             if (excludedMalaysiaRows.length) {
               addSection("MALAYSIA EXCLUDED FOREIGN-SOURCE ITEMS");
@@ -2404,6 +3468,19 @@
               addLine("Profit After Standard Deduction", fmt(detail.profitAfterSD, localCur));
             if (detail.netAfterInterest !== undefined)
               addLine("Net After Interest", fmt(detail.netAfterInterest, localCur));
+          });
+        }
+
+        if (projectionRows && projectionRows.length) {
+          addSection("MULTI-YEAR PROJECTION");
+          projectionRows.forEach((row) => {
+            addLine(
+              `Year ${row.year}`,
+              `income ${fmt(row.incomeUSD, "USD")} | US tax ${fmt(row.usTaxUSD, "USD")} | ${settings.expatCountry} tax ${fmt(row.expatTaxUSD, "USD")} | combined ${fmt(row.combinedTaxUSD, "USD")} | eff. ${pct(row.effectiveRatePct)}` +
+                (row.portfolioEnd > 0
+                  ? ` | portfolio ${fmt(row.portfolioStart, "USD")} -> ${fmt(row.portfolioEnd, "USD")} | real ${fmt(row.realPortfolioEnd, "USD")}`
+                  : ""),
+            );
           });
         }
 
@@ -3003,6 +4080,8 @@
         income,
         onChange,
         settings,
+        passiveIncomeMode,
+        passiveDerived,
       }) {
         return (
           <>
@@ -3034,72 +4113,14 @@
               </div>
             </div>
 
-            <div className="section-card">
-              <div style={{ marginBottom: 14 }}>
-                <div className="country-title" style={{ fontSize: 15 }}>
-                  Capital Gains &amp; Investment Income
-                </div>
-                <div
-                  style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}
-                >
-                  US-recognized preferential rates apply;{" "}
-                  {settings.expatCountry} taxes these at slab rates
-                </div>
-              </div>
-              <div className="field-row-3">
-                <NumberInput
-                  label="Short-Term Cap Gains"
-                  value={inc.shortTermGains}
-                  onChange={(v) => upd("shortTermGains", v)}
-                  prefix={pfx}
-                />
-                <NumberInput
-                  label="Long-Term Cap Gains"
-                  value={inc.longTermGains}
-                  onChange={(v) => upd("longTermGains", v)}
-                  prefix={pfx}
-                />
-                <NumberInput
-                  label="Interest Income"
-                  value={inc.interest}
-                  onChange={(v) => upd("interest", v)}
-                  prefix={pfx}
-                />
-              </div>
-              <div className="field-row-3">
-                <NumberInput
-                  label="Total Ordinary Dividends"
-                  value={inc.ordinaryDividends}
-                  onChange={(v) => upd("ordinaryDividends", v)}
-                  prefix={pfx}
-                  note="Includes qualified"
-                />
-                <NumberInput
-                  label="Qualified Dividends (subset)"
-                  value={inc.qualifiedDividends}
-                  onChange={(v) => upd("qualifiedDividends", v)}
-                  prefix={pfx}
-                  note={`US: preferential rate; ${settings.expatCountry}: slab rate`}
-                />
-                <NumberInput
-                  label="Exempt-Interest Dividends"
-                  value={inc.exemptIntDividends}
-                  onChange={(v) => upd("exemptIntDividends", v)}
-                  prefix={pfx}
-                  note={`US: federal tax-exempt; ${settings.expatCountry}: taxable`}
-                />
-              </div>
-              <div className="field-row">
-                <NumberInput
-                  label="Section 199A Dividends"
-                  value={inc.sec199aDividends}
-                  onChange={(v) => upd("sec199aDividends", v)}
-                  prefix={pfx}
-                  note="REIT divs — 20% QBI deduction (US only)"
-                />
-                <div />
-              </div>
-            </div>
+            <PassiveIncomeSection
+              inc={inc}
+              upd={upd}
+              pfx={pfx}
+              settings={settings}
+              passiveIncomeMode={passiveIncomeMode}
+              passiveDerived={passiveDerived}
+            />
 
             <div className="section-card">
               <div style={{ marginBottom: 14 }}>
@@ -3256,25 +4277,40 @@
                   note={`${settings.expatCountry} rates`}
                 />
               </div>
-              <div className="field-row">
-                <SpouseField
-                  label="Short-Term Cap Gains"
-                  fieldKey="shortTermGains"
-                  income={income}
-                  onChange={onChange}
-                  pfx={pfx}
-                  note={settings.expatCountry === "India" ? "Sec 111A flat rate" : "Slab rate"}
-                />
-                <SpouseField
-                  label="Long-Term Cap Gains"
-                  fieldKey="longTermGains"
-                  income={income}
-                  onChange={onChange}
-                  pfx={pfx}
-                  note={settings.expatCountry === "India" ? "Sec 112A flat rate" : "Slab rate"}
-                />
-              </div>
+              {passiveIncomeMode === "portfolio" ? (
+                <div className="info-box">
+                  Portfolio-derived capital gains feed the tax model automatically.
+                  In the {settings.expatCountry} spouse view they are split equally
+                  for now, so the derived totals stay in sync with the portfolio
+                  assumptions.
+                </div>
+              ) : (
+                <div className="field-row">
+                  <SpouseField
+                    label="Short-Term Cap Gains"
+                    fieldKey="shortTermGains"
+                    income={income}
+                    onChange={onChange}
+                    pfx={pfx}
+                    note={settings.expatCountry === "India" ? "Sec 111A flat rate" : "Slab rate"}
+                  />
+                  <SpouseField
+                    label="Long-Term Cap Gains"
+                    fieldKey="longTermGains"
+                    income={income}
+                    onChange={onChange}
+                    pfx={pfx}
+                    note={settings.expatCountry === "India" ? "Sec 112A flat rate" : "Slab rate"}
+                  />
+                </div>
+              )}
             </div>
+            <ProjectionAssumptionsCard
+              inc={inc}
+              upd={upd}
+              pfx={pfx}
+              passiveIncomeMode={passiveIncomeMode}
+            />
           </>
         );
       }
@@ -3288,6 +4324,8 @@
         settings,
         income,
         onChange,
+        passiveIncomeMode,
+        passiveDerived,
       }) {
         return (
           <>
@@ -3322,62 +4360,15 @@
                   />
                 </div>
 
-                <div className="section-title" style={{ marginTop: 8 }}>
-                  Capital Gains &amp; Investment
-                </div>
-                <div className="field-row-3">
-                  <NumberInput
-                    label="Short-Term Cap Gains"
-                    value={inc.shortTermGains}
-                    onChange={(v) => upd("shortTermGains", v)}
-                    prefix={pfx}
-                  />
-                  <NumberInput
-                    label="Long-Term Cap Gains"
-                    value={inc.longTermGains}
-                    onChange={(v) => upd("longTermGains", v)}
-                    prefix={pfx}
-                  />
-                  <NumberInput
-                    label="Interest Income"
-                    value={inc.interest}
-                    onChange={(v) => upd("interest", v)}
-                    prefix={pfx}
-                  />
-                </div>
-                <div className="field-row-3">
-                  <NumberInput
-                    label="Total Ordinary Dividends"
-                    value={inc.ordinaryDividends}
-                    onChange={(v) => upd("ordinaryDividends", v)}
-                    prefix={pfx}
-                    note="Includes qualified"
-                  />
-                  <NumberInput
-                    label="Qualified Dividends (subset)"
-                    value={inc.qualifiedDividends}
-                    onChange={(v) => upd("qualifiedDividends", v)}
-                    prefix={pfx}
-                    note="Taxed at preferential rates"
-                  />
-                  <NumberInput
-                    label="Exempt-Interest Dividends"
-                    value={inc.exemptIntDividends}
-                    onChange={(v) => upd("exemptIntDividends", v)}
-                    prefix={pfx}
-                    note="Box 12 — not taxed at federal level"
-                  />
-                </div>
-                <div className="field-row">
-                  <NumberInput
-                    label="Section 199A Dividends"
-                    value={inc.sec199aDividends}
-                    onChange={(v) => upd("sec199aDividends", v)}
-                    prefix={pfx}
-                    note="REIT dividends — 20% QBI deduction applies"
-                  />
-                  <div />
-                </div>
+                <PassiveIncomeSection
+                  inc={inc}
+                  upd={upd}
+                  pfx={pfx}
+                  settings={settings}
+                  passiveIncomeMode={passiveIncomeMode}
+                  passiveDerived={passiveDerived}
+                  embedded={true}
+                />
 
                 <hr className="section-sep" />
                 <div className="section-title">
@@ -3503,24 +4494,32 @@
                     note="Interest, dividends — slab rates"
                   />
                 </div>
-                <div className="field-row">
-                  <SpouseField
-                    label={`Short-Term Cap Gains (${settings.expatCountry})`}
-                    fieldKey="shortTermGains"
-                    income={income}
-                    onChange={onChange}
-                    pfx={pfx}
-                    note={settings.expatCountry === "India" ? "Sec 111A flat rate" : "Slab rate"}
-                  />
-                  <SpouseField
-                    label={`Long-Term Cap Gains (${settings.expatCountry})`}
-                    fieldKey="longTermGains"
-                    income={income}
-                    onChange={onChange}
-                    pfx={pfx}
-                    note={settings.expatCountry === "India" ? "Sec 112A flat rate" : "Slab rate"}
-                  />
-                </div>
+                {passiveIncomeMode === "portfolio" ? (
+                  <div className="info-box">
+                    Portfolio-derived gains stay on the US input side and flow into
+                    the local-country tax model automatically where applicable.
+                    They are split equally between spouses in this projected mode.
+                  </div>
+                ) : (
+                  <div className="field-row">
+                    <SpouseField
+                      label={`Short-Term Cap Gains (${settings.expatCountry})`}
+                      fieldKey="shortTermGains"
+                      income={income}
+                      onChange={onChange}
+                      pfx={pfx}
+                      note={settings.expatCountry === "India" ? "Sec 111A flat rate" : "Slab rate"}
+                    />
+                    <SpouseField
+                      label={`Long-Term Cap Gains (${settings.expatCountry})`}
+                      fieldKey="longTermGains"
+                      income={income}
+                      onChange={onChange}
+                      pfx={pfx}
+                      note={settings.expatCountry === "India" ? "Sec 112A flat rate" : "Slab rate"}
+                    />
+                  </div>
+                )}
 
                 <hr className="section-sep" />
                 <div className="section-title">
@@ -3562,6 +4561,12 @@
                 </div>
               </div>
             )}
+            <ProjectionAssumptionsCard
+              inc={inc}
+              upd={upd}
+              pfx={pfx}
+              passiveIncomeMode={passiveIncomeMode}
+            />
           </>
         );
       }
@@ -3587,6 +4592,7 @@
         const isCombined = settings.splitIncomeMode === "combined";
         const td = US_TAX_DATA[settings.taxYear];
         const hasQBI = td && td.qbiRate;
+        const { passiveIncomeMode, passiveDerived } = resolvePassiveIncome(income);
 
         function CurrencyPill({ label, active, onClick }) {
           return (
@@ -3749,6 +4755,8 @@
                   income={income}
                   onChange={updIncome}
                   settings={settings}
+                  passiveIncomeMode={passiveIncomeMode}
+                  passiveDerived={passiveDerived}
                 />
               </>
             ) : (
@@ -3768,6 +4776,8 @@
                   settings={settings}
                   income={income}
                   onChange={updIncome}
+                  passiveIncomeMode={passiveIncomeMode}
+                  passiveDerived={passiveDerived}
                 />
               </>
             )}
@@ -5709,11 +6719,15 @@
         indiaResult,
         usIncome,
         income,
+        effectiveIncome,
         settings,
         inrToUsd,
         taxYear,
         indiaTotalIncomeINR,
         isCombined,
+        projectionRows,
+        passiveIncomeMode,
+        passiveDerived,
       }) {
         const td = US_TAX_DATA[taxYear];
         const indiaTd = INDIA_TAX_DATA[taxYear];
@@ -5724,6 +6738,7 @@
         const isForeignCur = cur === "INR" || cur === "MYR";
         const toUSD = (v) => (isForeignCur ? v / inrToUsd : v);
         const toINR = (v) => (cur === "USD" ? v * inrToUsd : v);
+        const liveIncome = effectiveIncome || income;
 
         const r = usResult;
         const sp1res = indiaResult?.spouse1?.result;
@@ -5754,17 +6769,17 @@
         const ordDivUSD = usIncome?.ordinaryDividends || 0;
         const nonQualDivUSD = Math.max(0, ordDivUSD - qdiUSD);
         const rentalNetUSD = usIncome?.rentalNet || 0;
-        const rentalGrossUSD = toUSD(income.usRentalGross || 0);
+        const rentalGrossUSD = toUSD(liveIncome.usRentalGross || 0);
         const sec199aUSD = usIncome?.sec199aDividends || 0;
 
         // India income (INR)
         const indiaSalaryINR = isCombined
-          ? toINR(income.wages || 0)
-          : toINR(income.indiaSalary || 0);
-        const indiaStcgINR = toINR(income.shortTermGains || 0);
-        const indiaLtcgINR = toINR(income.longTermGains || 0);
-        const indiaRentalGrossINR = toINR(income.indiaRentalGross || 0);
-        const indiaInterestINR = toINR(income.interest || 0);
+          ? toINR(liveIncome.wages || 0)
+          : toINR(liveIncome.indiaSalary || 0);
+        const indiaStcgINR = toINR(liveIncome.shortTermGains || 0);
+        const indiaLtcgINR = toINR(liveIncome.longTermGains || 0);
+        const indiaRentalGrossINR = toINR(liveIncome.indiaRentalGross || 0);
+        const indiaInterestINR = toINR(liveIncome.interest || 0);
 
         // India tax rate info
         const indiaSurchargeRate =
@@ -5806,8 +6821,8 @@
         const hasSTCG = stcgUSD > 0;
         const hasQDI = qdiUSD > 0;
         const hasNonQualDiv = nonQualDivUSD > 500;
-        const hasUSRental = (income.usRentalGross || 0) > 0;
-        const hasIndiaRental = (income.indiaRentalGross || 0) > 0;
+        const hasUSRental = (liveIncome.usRentalGross || 0) > 0;
+        const hasIndiaRental = (liveIncome.indiaRentalGross || 0) > 0;
         const hasIndiaIncome = indiaTotalIncomeINR > 0;
         const subjectToNIIT = usGross > niitThresh && niitIncome > 0;
         const indiaNewRegime = settings.useNewIndia;
@@ -6112,10 +7127,144 @@
                   </div>
                 </div>
               ))}
-            </div>
+	            </div>
 
-            {/* === US STRATEGIES === */}
-            <Section title="🇺🇸 US Federal Strategies">
+	            {projectionRows && projectionRows.length > 0 && (
+	              <div
+	                style={{
+	                  background: "var(--bg2)",
+	                  border: "1px solid var(--border)",
+	                  borderRadius: 10,
+	                  padding: 18,
+	                  marginBottom: 24,
+	                }}
+	              >
+	                <div
+	                  style={{
+	                    display: "flex",
+	                    justifyContent: "space-between",
+	                    gap: 12,
+	                    flexWrap: "wrap",
+	                    marginBottom: 12,
+	                  }}
+	                >
+	                  <div>
+	                    <div style={{ fontSize: 16, fontWeight: 600 }}>
+	                      Year-over-Year Simulation
+	                    </div>
+	                    <div
+	                      style={{
+	                        fontSize: 12,
+	                        color: "var(--text3)",
+	                        marginTop: 2,
+	                        lineHeight: 1.6,
+	                      }}
+	                    >
+	                      {income.simulationYears || projectionRows.length}-year projection
+	                      using current tax-year rules as a steady-state model.
+	                      {passiveIncomeMode === "portfolio" &&
+	                        " Portfolio income is derived from your asset mix and expected return assumptions."}
+	                    </div>
+	                  </div>
+	                  {passiveIncomeMode === "portfolio" && passiveDerived && (
+	                    <div
+	                      style={{
+	                        display: "flex",
+	                        gap: 8,
+	                        flexWrap: "wrap",
+	                        alignItems: "center",
+	                      }}
+	                    >
+	                      <span className="badge badge-blue">
+	                        Start portfolio {fmtU(income.portfolioValue || 0)}
+	                      </span>
+	                      <span className="badge badge-green">
+	                        Return {pct(passiveDerived.expectedAnnualReturnPct)}
+	                      </span>
+	                      <span className="badge badge-orange">
+	                        Inflation {pct(income.inflationPct || 0)}
+	                      </span>
+	                    </div>
+	                  )}
+	                </div>
+	                <div style={{ overflowX: "auto" }}>
+	                  <table
+	                    style={{
+	                      width: "100%",
+	                      borderCollapse: "collapse",
+	                      fontSize: 13,
+	                    }}
+	                  >
+	                    <thead>
+	                      <tr style={{ color: "var(--text3)", textAlign: "left" }}>
+	                        {[
+	                          "Year",
+	                          "Income",
+	                          "US Tax",
+	                          settings.expatCountry + " Tax",
+	                          "Combined Tax",
+	                          "Eff. Rate",
+	                          "Passive Income",
+	                          "Portfolio Start",
+	                          "Portfolio End",
+	                          "Real End",
+	                        ].map((head) => (
+	                          <th
+	                            key={head}
+	                            style={{
+	                              padding: "8px 10px",
+	                              borderBottom: "1px solid var(--border)",
+	                              whiteSpace: "nowrap",
+	                            }}
+	                          >
+	                            {head}
+	                          </th>
+	                        ))}
+	                      </tr>
+	                    </thead>
+	                    <tbody>
+	                      {projectionRows.map((row) => (
+	                        <tr key={row.year}>
+	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)" }}>
+	                            {row.year}
+	                          </td>
+	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace" }}>
+	                            {fmtU(row.incomeUSD)}
+	                          </td>
+	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace" }}>
+	                            {fmtU(row.usTaxUSD)}
+	                          </td>
+	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace" }}>
+	                            {fmtU(row.expatTaxUSD)}
+	                          </td>
+	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace" }}>
+	                            {fmtU(row.combinedTaxUSD)}
+	                          </td>
+	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>
+	                            {pct(row.effectiveRatePct)}
+	                          </td>
+	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace" }}>
+	                            {fmtU(row.passiveCashUSD)}
+	                          </td>
+	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.portfolioStart > 0 ? "var(--text)" : "var(--text3)" }}>
+	                            {row.portfolioStart > 0 ? fmtU(row.portfolioStart) : "—"}
+	                          </td>
+	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.portfolioEnd > 0 ? "var(--text)" : "var(--text3)" }}>
+	                            {row.portfolioEnd > 0 ? fmtU(row.portfolioEnd) : "—"}
+	                          </td>
+	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.realPortfolioEnd > 0 ? "var(--text2)" : "var(--text3)" }}>
+	                            {row.realPortfolioEnd > 0 ? fmtU(row.realPortfolioEnd) : "—"}
+	                          </td>
+	                        </tr>
+	                      ))}
+	                    </tbody>
+	                  </table>
+	                </div>
+	              </div>
+	            )}
+
+	            {/* === US STRATEGIES === */}
+	            <Section title="🇺🇸 US Federal Strategies">
               {/* FTC unused */}
               {ftcUnused > 500 && (
                 <OpCard
@@ -6935,282 +8084,44 @@
         };
 
         const {
-          inrToUsd,
-          myrToUsd,
           taxYear,
-          filingStatus,
-          useNewIndia,
-          expatTaxRegime,
-          useFEIE,
           expatCountry,
-          currency,
           includeExpat,
           includeUS,
-          splitIncomeMode,
           territorialForeignIncomeExempt,
         } = settings;
-        const expatToUsd = expatCountry === "Malaysia" ? myrToUsd : inrToUsd;
-        const isCombined = splitIncomeMode === "combined";
-        const malaysiaTerritorialExempt =
-          expatCountry === "Malaysia" && territorialForeignIncomeExempt;
-
-        function toUSD(v) {
-          return currency !== "USD" ? v / expatToUsd : v;
-        }
-        function toINR(v) {
-          return currency === "USD" ? v * expatToUsd : v;
-        }
-
-        const usRentalGrossUSD = toUSD(income.usRentalGross);
-        const usPropertyPriceUSD = toUSD(settings.usPropertyPrice || 0);
-        const usAutoDepreciation = (usPropertyPriceUSD * 0.8) / 27.5;
-        const usRentalNet = Math.max(
-          0,
-          usRentalGrossUSD -
-            toUSD(income.usRentalMortgageInterest) -
-            toUSD(income.usRentalPropertyTax) -
-            usAutoDepreciation -
-            toUSD(income.usRentalOtherExpenses),
+        const scenario = React.useMemo(
+          () => computeScenario({ settings, income }),
+          [settings, income],
         );
-
-        const indiaRentalDetailINR = calcIndiaRentalIncome({
-          grossRent: toINR(income.indiaRentalGross),
-          reTax: toINR(income.indiaRentalReTax),
-          additionalExpenses: toINR(income.indiaRentalAddlExpenses),
-          interest: toINR(income.indiaRentalInterest),
-          isMalaysia: expatCountry === "Malaysia",
-        });
-
-        // US rental income is also taxable in India for Indian residents (global income).
-        // Computed under India's house property rules (Sec 22-27):
-        // - Property tax deductible, 30% standard deduction (Sec 24a), loan interest (Sec 24b)
-        // - NO depreciation (India doesn't allow it), NO other expense offsets
-        const usRentalUnderIndiaRulesINR = expatCountry === 'Malaysia'
-          ? { grossRent: 0, reTax: 0, additionalExpenses: 0, interest: 0, revenueAfterExpenses: 0, profitAfterReTax: 0, stdDeduction30: 0, profitAfterSD: 0, netAfterInterest: 0 }
-          : calcIndiaRentalIncome({
-              grossRent: toINR(income.usRentalGross),
-              reTax: toINR(income.usRentalPropertyTax),
-              additionalExpenses: 0,
-              interest: toINR(income.usRentalMortgageInterest),
-            });
-
-        // Combined rental income for India tax purposes (both properties)
-        const totalIndiaRentalNetINR =
-          indiaRentalDetailINR.netAfterInterest +
-          usRentalUnderIndiaRulesINR.netAfterInterest;
-
-        // Helper: get per-spouse value for a field (respects split toggle)
-        function spouseVal(fieldKey, spouseNum) {
-          const total = toINR(income[fieldKey] || 0);
-          if (!income[fieldKey + "_split"]) return total / 2;
-          const s1 = toINR(
-            income[fieldKey + "_s1"] !== undefined
-              ? income[fieldKey + "_s1"]
-              : total / 2,
-          );
-          return spouseNum === 1 ? s1 : Math.max(0, total - s1);
-        }
-
-        // Separate special-rate income (STCG, LTCG) from ordinary income for India
-        const indiaStcgINR = toINR(income.shortTermGains || 0);
-        const indiaLtcgINR = toINR(income.longTermGains || 0);
-
-        const indiaOrdinaryIncomeINR = isCombined
-          ? malaysiaTerritorialExempt
-            ? 0
-            : toINR(income.wages) +
-              toINR(income.businessIncome) +
-              toINR(income.interest) +
-              toINR(income.ordinaryDividends)
-          : toINR(income.indiaSalary) + toINR(income.indiaOtherIncome);
-
-        const indiaTotalIncomeINR =
-          indiaOrdinaryIncomeINR +
-          totalIndiaRentalNetINR +
-          indiaStcgINR +
-          indiaLtcgINR;
-
-        // Per-spouse ordinary income (respects split toggles)
-        const includeGlobalInvestment = expatCountry !== 'Malaysia';
-        const indiaOrdS1 = isCombined
-          ? malaysiaTerritorialExempt
-            ? 0
-            : spouseVal("wages", 1) +
-              spouseVal("businessIncome", 1) +
-              (includeGlobalInvestment ? toINR(income.interest || 0) / 2 + toINR(income.ordinaryDividends || 0) / 2 : 0)
-          : spouseVal("indiaSalary", 1) + spouseVal("indiaOtherIncome", 1);
-        const indiaOrdS2 = isCombined
-          ? malaysiaTerritorialExempt
-            ? 0
-            : spouseVal("wages", 2) +
-              spouseVal("businessIncome", 2) +
-              (includeGlobalInvestment ? toINR(income.interest || 0) / 2 + toINR(income.ordinaryDividends || 0) / 2 : 0)
-          : spouseVal("indiaSalary", 2) + spouseVal("indiaOtherIncome", 2);
-
-        const indiaRentalPerSpouse = totalIndiaRentalNetINR / 2;
-        const indiaSpecialS1 = {
-          stcg: (isCombined && !includeGlobalInvestment) ? 0 : spouseVal("shortTermGains", 1),
-          ltcgEquity: (isCombined && !includeGlobalInvestment) ? 0 : spouseVal("longTermGains", 1),
-          ltcgOther: 0,
-        };
-        const indiaSpecialS2 = {
-          stcg: (isCombined && !includeGlobalInvestment) ? 0 : spouseVal("shortTermGains", 2),
-          ltcgEquity: (isCombined && !includeGlobalInvestment) ? 0 : spouseVal("longTermGains", 2),
-          ltcgOther: 0,
-        };
-
-        const hasSalaryIndia = isCombined
-          ? toINR(income.wages) > 0
-          : toINR(income.indiaSalary) > 0;
-
-        const indiaTd = INDIA_TAX_DATA[taxYear];
-        let indiaResult = null;
-        if (includeExpat) {
-          if (expatCountry === "Malaysia") {
-            const r1 = calcMalaysiaTax(
-              indiaOrdS1 + indiaRentalPerSpouse,
-              expatTaxRegime === "resident",
-              indiaSpecialS1,
-              taxYear,
-            );
-            const r2 = calcMalaysiaTax(
-              indiaOrdS2 + indiaRentalPerSpouse,
-              expatTaxRegime === "resident",
-              indiaSpecialS2,
-              taxYear,
-            );
-            indiaResult = {
-              spouse1: {
-                incomeINR: indiaOrdS1 + indiaRentalPerSpouse,
-                result: r1,
-              },
-              spouse2: {
-                incomeINR: indiaOrdS2 + indiaRentalPerSpouse,
-                result: r2,
-              },
-              total: {
-                totalINR: r1.total + r2.total,
-                totalCess: r1.cess + r2.cess,
-                totalSurcharge: r1.surcharge + r2.surcharge,
-                effectiveRate:
-                  indiaTotalIncomeINR > 0
-                    ? ((r1.total + r2.total) / indiaTotalIncomeINR) * 100
-                    : 0,
-              },
-              indiaPropertyDetail: {
-                ...indiaRentalDetailINR,
-                grossRent: toINR(income.indiaRentalGross),
-                reTax: toINR(income.indiaRentalReTax),
-                additionalExpenses: toINR(income.indiaRentalAddlExpenses),
-                interest: toINR(income.indiaRentalInterest),
-                label: "Malaysia Property",
-              },
-              usPropertyDetail: {
-                ...usRentalUnderIndiaRulesINR,
-                grossRent: toINR(income.usRentalGross),
-                reTax: toINR(income.usRentalPropertyTax),
-                additionalExpenses: 0,
-                interest: toINR(income.usRentalMortgageInterest),
-                label: "US Property (taxed under Malaysia rules)",
-              },
-              totalRentalNetINR: totalIndiaRentalNetINR,
-            };
-          } else if (indiaTd) {
-            const r1 = calcIndiaTax(
-              indiaOrdS1 + indiaRentalPerSpouse,
-              indiaTd,
-              useNewIndia,
-              hasSalaryIndia,
-              indiaSpecialS1,
-              taxYear,
-            );
-            const r2 = calcIndiaTax(
-              indiaOrdS2 + indiaRentalPerSpouse,
-              indiaTd,
-              useNewIndia,
-              hasSalaryIndia,
-              indiaSpecialS2,
-              taxYear,
-            );
-            indiaResult = {
-              spouse1: {
-                incomeINR: indiaOrdS1 + indiaRentalPerSpouse,
-                result: r1,
-              },
-              spouse2: {
-                incomeINR: indiaOrdS2 + indiaRentalPerSpouse,
-                result: r2,
-              },
-              total: {
-                totalINR: r1.total + r2.total,
-                totalCess: r1.cess + r2.cess,
-                totalSurcharge: r1.surcharge + r2.surcharge,
-                effectiveRate:
-                  indiaTotalIncomeINR > 0
-                    ? ((r1.total + r2.total) / indiaTotalIncomeINR) * 100
-                    : 0,
-              },
-              indiaPropertyDetail: {
-                ...indiaRentalDetailINR,
-                grossRent: toINR(income.indiaRentalGross),
-                reTax: toINR(income.indiaRentalReTax),
-                additionalExpenses: toINR(income.indiaRentalAddlExpenses),
-                interest: toINR(income.indiaRentalInterest),
-                label: "India Property",
-              },
-              usPropertyDetail: {
-                ...usRentalUnderIndiaRulesINR,
-                grossRent: toINR(income.usRentalGross),
-                reTax: toINR(income.usRentalPropertyTax),
-                additionalExpenses: 0,
-                interest: toINR(income.usRentalMortgageInterest),
-                label: "US Property (taxed under India rules)",
-              },
-              totalRentalNetINR: totalIndiaRentalNetINR,
-            };
-          }
-        }
-
-        const indiaTaxUSD = indiaResult
-          ? indiaResult.total.totalINR / expatToUsd
-          : 0;
-
-        const usIncome = {
-          wages: toUSD(income.wages),
-          businessIncome: toUSD(income.businessIncome),
-          rentalNet: usRentalNet,
-          rentalMortgageInterest: toUSD(income.usRentalMortgageInterest),
-          rentalPropertyTax: toUSD(income.usRentalPropertyTax),
-          rentalOtherExpenses: toUSD(income.usRentalOtherExpenses),
-          interest: toUSD(income.interest),
-          ordinaryDividends: toUSD(income.ordinaryDividends),
-          qualifiedDividends: toUSD(income.qualifiedDividends),
-          exemptIntDividends: toUSD(income.exemptIntDividends),
-          sec199aDividends: toUSD(income.sec199aDividends),
-          longTermGains: toUSD(income.longTermGains),
-          shortTermGains: toUSD(income.shortTermGains),
-          filingStatus,
-          year: taxYear,
-          indiaTaxPaid: indiaTaxUSD,
-          useFEIE,
-        };
-
-        let usResult = null;
-        if (includeUS && US_TAX_DATA[taxYear]) {
-          usResult = calcUSTax(usIncome);
-        }
-
-        const totalUSTax = usResult ? usResult.netUSTax : 0;
-        const totalIndiaTax = indiaResult ? indiaResult.total.totalINR : 0;
-        const totalIndiaTaxUSD = totalIndiaTax / expatToUsd;
-        const combinedTaxUSD = totalUSTax + totalIndiaTaxUSD;
-        // In combined mode both countries share the same income — don't double-count
-        const combinedIncomeUSD = isCombined
-          ? usResult
-            ? usResult.totalGrossIncome
-            : indiaTotalIncomeINR / expatToUsd
-          : (usResult ? usResult.totalGrossIncome : 0) +
-            indiaTotalIncomeINR / expatToUsd;
+        const projectionRows = React.useMemo(
+          () => buildProjectionRows({ settings, income }),
+          [settings, income],
+        );
+        const {
+          passiveIncomeMode,
+          passiveDerived,
+          effectiveIncome,
+          expatToUsd,
+          isCombined,
+          malaysiaTerritorialExempt,
+          usRentalGrossUSD,
+          usAutoDepreciation,
+          totalIndiaRentalNetINR,
+          indiaStcgINR,
+          indiaLtcgINR,
+          indiaTotalIncomeINR,
+          indiaResult,
+          indiaTaxUSD,
+          usIncome,
+          usResult,
+          totalUSTax,
+          totalIndiaTax,
+          totalIndiaTaxUSD,
+          combinedTaxUSD,
+          combinedIncomeUSD,
+        } = scenario;
+        const toLocal = (v) => (settings.currency === "USD" ? v * expatToUsd : v);
 
         function handleExportReport() {
           const stamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -7222,6 +8133,9 @@
             currentTab: tab,
             settings,
             income,
+            effectiveIncome,
+            passiveIncomeMode,
+            passiveDerived,
             usIncome,
             usResult,
             indiaResult,
@@ -7232,6 +8146,7 @@
             combinedIncomeUSD,
             totalIndiaRentalNetINR,
             expatToUsd,
+            projectionRows,
             uiSnapshot,
           });
           downloadTextReport(`expattax-export-${stamp}.txt`, report);
@@ -7282,7 +8197,7 @@
             {tab === "home" && (
               <HomePanel
                 settings={settings}
-                income={income}
+                income={effectiveIncome}
                 setTab={setTab}
                 combinedTaxUSD={combinedTaxUSD}
                 combinedIncomeUSD={combinedIncomeUSD}
@@ -7434,53 +8349,53 @@
                       salary: isCombined
                         ? malaysiaTerritorialExempt
                           ? 0
-                          : toINR(income.wages)
-                        : toINR(income.indiaSalary || 0),
+                          : toLocal(effectiveIncome.wages)
+                        : toLocal(effectiveIncome.indiaSalary || 0),
                       business:
                         isCombined && !malaysiaTerritorialExempt
-                          ? toINR(income.businessIncome)
+                          ? toLocal(effectiveIncome.businessIncome)
                           : 0,
-                      other: toINR(income.indiaOtherIncome || 0),
+                      other: toLocal(effectiveIncome.indiaOtherIncome || 0),
                       rental: totalIndiaRentalNetINR,
                       combined: isCombined,
                       interest:
                         expatCountry === "India"
-                          ? toINR(income.interest || 0)
+                          ? toLocal(effectiveIncome.interest || 0)
                           : 0,
                       dividends:
                         expatCountry === "India"
-                          ? toINR(income.ordinaryDividends || 0)
+                          ? toLocal(effectiveIncome.ordinaryDividends || 0)
                           : 0,
                       stcg: expatCountry === "India" ? indiaStcgINR : 0,
                       ltcgEquity:
                         expatCountry === "India" ? indiaLtcgINR : 0,
                       excludedSalary:
                         expatCountry === "Malaysia" && territorialForeignIncomeExempt
-                          ? toINR(income.wages || 0)
+                          ? toLocal(effectiveIncome.wages || 0)
                           : 0,
                       excludedBusiness:
                         expatCountry === "Malaysia" && territorialForeignIncomeExempt
-                          ? toINR(income.businessIncome || 0)
+                          ? toLocal(effectiveIncome.businessIncome || 0)
                           : 0,
                       excludedInterest:
                         expatCountry === "Malaysia" && territorialForeignIncomeExempt
-                          ? toINR(income.interest || 0)
+                          ? toLocal(effectiveIncome.interest || 0)
                           : 0,
                       excludedDividends:
                         expatCountry === "Malaysia" && territorialForeignIncomeExempt
-                          ? toINR(income.ordinaryDividends || 0)
+                          ? toLocal(effectiveIncome.ordinaryDividends || 0)
                           : 0,
                       excludedStcg:
                         expatCountry === "Malaysia" && territorialForeignIncomeExempt
-                          ? toINR(income.shortTermGains || 0)
+                          ? toLocal(effectiveIncome.shortTermGains || 0)
                           : 0,
                       excludedLtcg:
                         expatCountry === "Malaysia" && territorialForeignIncomeExempt
-                          ? toINR(income.longTermGains || 0)
+                          ? toLocal(effectiveIncome.longTermGains || 0)
                           : 0,
                       excludedRental:
                         expatCountry === "Malaysia" && territorialForeignIncomeExempt
-                          ? toINR(income.usRentalGross || 0)
+                          ? toLocal(effectiveIncome.usRentalGross || 0)
                           : 0,
                     }}
                   />
@@ -7533,11 +8448,15 @@
                 indiaResult={indiaResult}
                 usIncome={usIncome}
                 income={income}
+                effectiveIncome={effectiveIncome}
                 settings={settings}
                 inrToUsd={expatToUsd}
                 taxYear={taxYear}
                 indiaTotalIncomeINR={indiaTotalIncomeINR}
                 isCombined={isCombined}
+                projectionRows={projectionRows}
+                passiveIncomeMode={passiveIncomeMode}
+                passiveDerived={passiveDerived}
               />
             )}
           </div>
