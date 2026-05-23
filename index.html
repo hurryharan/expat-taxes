@@ -2128,6 +2128,25 @@
           };
 
           const scenario = computeScenario({ settings, income: projectedIncome });
+
+          // Calculate baseline scenario without any passive portfolio income to find the tax drag
+          const baselineIncome = {
+            ...projectedIncome,
+            shortTermGains: 0,
+            longTermGains: 0,
+            interest: 0,
+            ordinaryDividends: 0,
+            qualifiedDividends: 0,
+            exemptIntDividends: 0,
+            sec199aDividends: 0,
+            portfolioValue: 0,
+          };
+          const baselineScenario = computeScenario({ settings, income: baselineIncome });
+
+          const usTaxDragUSD = Math.max(0, (scenario.totalUSTax || 0) - (baselineScenario.totalUSTax || 0));
+          const expatTaxDragUSD = Math.max(0, (scenario.totalIndiaTaxUSD || 0) - (baselineScenario.totalIndiaTaxUSD || 0));
+          const combinedTaxDragUSD = usTaxDragUSD + expatTaxDragUSD;
+
           const contribution = growByRate(contributionBase, inflationPct, i);
           const withdrawal = growByRate(withdrawalBase, inflationPct, i);
           const passiveCashUSD = scenario.usIncome
@@ -2146,7 +2165,8 @@
                       ((scenario.passiveDerived?.expectedAnnualReturnPct || 0) /
                         100)) +
                     contribution -
-                    withdrawal,
+                    withdrawal -
+                    combinedTaxDragUSD,
                 )
               : 0;
           const inflationFactor = Math.pow(1 + inflationPct / 100, i + 1);
@@ -2166,6 +2186,9 @@
             portfolioContribution: contribution,
             portfolioWithdrawal: withdrawal,
             portfolioEnd,
+            usTaxDragUSD,
+            expatTaxDragUSD,
+            combinedTaxDragUSD,
             realPortfolioEnd:
               income.passiveIncomeMode === "portfolio" && inflationFactor > 0
                 ? portfolioEnd / inflationFactor
@@ -7427,13 +7450,14 @@
 	                          `${compareCountryA} Combined`,
 	                          `${compareCountryB} Combined`,
 	                          "Tax Delta",
-	                          `${compareCountryA} Local Tax`,
-	                          `${compareCountryB} Local Tax`,
-	                          "Passive Income",
-	                          "Portfolio Start",
-	                          `${compareCountryA} Portfolio End`,
-	                          `${compareCountryB} Portfolio End`,
-	                          "Real End",
+	                          `${compareCountryA} US Drag`,
+	                          `${compareCountryA} Local Drag`,
+	                          `${compareCountryB} US Drag`,
+	                          `${compareCountryB} Local Drag`,
+	                          `${compareCountryA} Port. End`,
+	                          `${compareCountryB} Port. End`,
+	                          `${compareCountryA} Real End`,
+	                          `${compareCountryB} Real End`,
 	                        ].map((head) => (
 	                          <th
 	                            key={head}
@@ -7475,17 +7499,17 @@
 	                          >
 	                            {fmtU(row.taxDeltaUSD)}
 	                          </td>
-	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace" }}>
-	                            {fmtU(row.countryA.expatTaxUSD)}
+	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryA.usTaxDragUSD > 0 ? "var(--text2)" : "var(--text3)" }}>
+	                            {row.countryA.usTaxDragUSD > 0 ? fmtU(row.countryA.usTaxDragUSD) : "—"}
 	                          </td>
-	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace" }}>
-	                            {fmtU(row.countryB.expatTaxUSD)}
+	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryA.expatTaxDragUSD > 0 ? "var(--text2)" : "var(--text3)" }}>
+	                            {row.countryA.expatTaxDragUSD > 0 ? fmtU(row.countryA.expatTaxDragUSD) : "—"}
 	                          </td>
-	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace" }}>
-	                            {fmtU(Math.max(row.countryA.passiveCashUSD || 0, row.countryB.passiveCashUSD || 0))}
+	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryB.usTaxDragUSD > 0 ? "var(--text2)" : "var(--text3)" }}>
+	                            {row.countryB.usTaxDragUSD > 0 ? fmtU(row.countryB.usTaxDragUSD) : "—"}
 	                          </td>
-	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryA.portfolioStart > 0 ? "var(--text)" : "var(--text3)" }}>
-	                            {row.countryA.portfolioStart > 0 ? fmtU(row.countryA.portfolioStart) : "—"}
+	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryB.expatTaxDragUSD > 0 ? "var(--text2)" : "var(--text3)" }}>
+	                            {row.countryB.expatTaxDragUSD > 0 ? fmtU(row.countryB.expatTaxDragUSD) : "—"}
 	                          </td>
 	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryA.portfolioEnd > 0 ? "var(--text)" : "var(--text3)" }}>
 	                            {row.countryA.portfolioEnd > 0 ? fmtU(row.countryA.portfolioEnd) : "—"}
@@ -7495,6 +7519,9 @@
 	                          </td>
 	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryA.realPortfolioEnd > 0 ? "var(--text2)" : "var(--text3)" }}>
 	                            {row.countryA.realPortfolioEnd > 0 ? fmtU(row.countryA.realPortfolioEnd) : "—"}
+	                          </td>
+	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryB.realPortfolioEnd > 0 ? "var(--text2)" : "var(--text3)" }}>
+	                            {row.countryB.realPortfolioEnd > 0 ? fmtU(row.countryB.realPortfolioEnd) : "—"}
 	                          </td>
 	                        </tr>
 	                      ))}
