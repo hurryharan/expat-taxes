@@ -1782,8 +1782,15 @@
           return spouseNum === 1 ? s1 : Math.max(0, total - s1);
         }
 
-        const indiaStcgINR = toINR(effectiveIncome.shortTermGains || 0);
-        const indiaLtcgINR = toINR(effectiveIncome.longTermGains || 0);
+        const includeGlobalInvestment = expatCountry !== "Malaysia";
+        const indiaStcgINR =
+          isCombined && !includeGlobalInvestment
+            ? 0
+            : toINR(effectiveIncome.shortTermGains || 0);
+        const indiaLtcgINR =
+          isCombined && !includeGlobalInvestment
+            ? 0
+            : toINR(effectiveIncome.longTermGains || 0);
 
         const indiaOrdinaryIncomeINR = isCombined
           ? malaysiaTerritorialExempt
@@ -1801,7 +1808,6 @@
           indiaStcgINR +
           indiaLtcgINR;
 
-        const includeGlobalInvestment = expatCountry !== "Malaysia";
         const indiaOrdS1 = isCombined
           ? malaysiaTerritorialExempt
             ? 0
@@ -2172,6 +2178,46 @@
         }
 
         return rows;
+      }
+
+      function normalizeIncomeToUSD(income, settings) {
+        const expatToUsd =
+          settings.expatCountry === "Malaysia" ? settings.myrToUsd : settings.inrToUsd;
+        if (settings.currency === "USD") return { ...income };
+        const usdIncome = { ...income };
+        const baseMoneyFields = new Set([
+          "wages",
+          "businessIncome",
+          "shortTermGains",
+          "longTermGains",
+          "interest",
+          "ordinaryDividends",
+          "qualifiedDividends",
+          "exemptIntDividends",
+          "sec199aDividends",
+          "usRentalGross",
+          "usRentalMortgageInterest",
+          "usRentalPropertyTax",
+          "usRentalDepreciation",
+          "usRentalOtherExpenses",
+          "indiaRentalGross",
+          "indiaRentalReTax",
+          "indiaRentalAddlExpenses",
+          "indiaRentalInterest",
+          "indiaSalary",
+          "indiaOtherIncome",
+          "portfolioValue",
+          "annualPortfolioContribution",
+          "annualPortfolioWithdrawal",
+        ]);
+        Object.keys(usdIncome).forEach((key) => {
+          const value = usdIncome[key];
+          if (!Number.isFinite(value)) return;
+          if (baseMoneyFields.has(key) || key.endsWith("_s1")) {
+            usdIncome[key] = value / expatToUsd;
+          }
+        });
+        return usdIncome;
       }
 
       // ============================================================
@@ -6732,13 +6778,81 @@
         const td = US_TAX_DATA[taxYear];
         const indiaTd = INDIA_TAX_DATA[taxYear];
         const foreignCur = settings.expatCountry === "Malaysia" ? "MYR" : "INR";
-        const fmtI = (n) => fmt(Math.round(n), foreignCur);
+        const fmtI = (n) => fmt(Math.round(n / inrToUsd), "USD");
         const fmtU = (n) => fmt(Math.round(n), "USD");
         const cur = settings.currency;
         const isForeignCur = cur === "INR" || cur === "MYR";
         const toUSD = (v) => (isForeignCur ? v / inrToUsd : v);
         const toINR = (v) => (cur === "USD" ? v * inrToUsd : v);
         const liveIncome = effectiveIncome || income;
+        const countryOptions = ["India", "Malaysia"];
+        const defaultCompareA = settings.expatCountry || "India";
+        const defaultCompareB =
+          defaultCompareA === "India" ? "Malaysia" : "India";
+        const [compareCountryA, setCompareCountryA] = React.useState(defaultCompareA);
+        const [compareCountryB, setCompareCountryB] = React.useState(defaultCompareB);
+        const planningIncomeUSD = React.useMemo(
+          () => normalizeIncomeToUSD(income, settings),
+          [income, settings],
+        );
+        const comparisonSettingsFor = React.useCallback(
+          (country) => ({
+            ...settings,
+            expatCountry: country,
+            currency: "USD",
+            includeUS: true,
+            includeExpat: true,
+          }),
+          [settings],
+        );
+        const compareScenarioA = React.useMemo(
+          () =>
+            computeScenario({
+              settings: comparisonSettingsFor(compareCountryA),
+              income: planningIncomeUSD,
+            }),
+          [compareCountryA, comparisonSettingsFor, planningIncomeUSD],
+        );
+        const compareScenarioB = React.useMemo(
+          () =>
+            computeScenario({
+              settings: comparisonSettingsFor(compareCountryB),
+              income: planningIncomeUSD,
+            }),
+          [compareCountryB, comparisonSettingsFor, planningIncomeUSD],
+        );
+        const compareRowsA = React.useMemo(
+          () =>
+            buildProjectionRows({
+              settings: comparisonSettingsFor(compareCountryA),
+              income: planningIncomeUSD,
+            }),
+          [compareCountryA, comparisonSettingsFor, planningIncomeUSD],
+        );
+        const compareRowsB = React.useMemo(
+          () =>
+            buildProjectionRows({
+              settings: comparisonSettingsFor(compareCountryB),
+              income: planningIncomeUSD,
+            }),
+          [compareCountryB, comparisonSettingsFor, planningIncomeUSD],
+        );
+        const comparisonRows = React.useMemo(
+          () =>
+            compareRowsA.map((rowA, idx) => {
+              const rowB = compareRowsB[idx] || {};
+              return {
+                year: rowA.year,
+                countryA: rowA,
+                countryB: rowB,
+                taxDeltaUSD: (rowA.combinedTaxUSD || 0) - (rowB.combinedTaxUSD || 0),
+                localTaxDeltaUSD:
+                  (rowA.expatTaxUSD || 0) - (rowB.expatTaxUSD || 0),
+              };
+            }),
+          [compareRowsA, compareRowsB],
+        );
+        const projectionYears = income.simulationYears || comparisonRows.length;
 
         const r = usResult;
         const sp1res = indiaResult?.spouse1?.result;
@@ -7129,7 +7243,7 @@
               ))}
 	            </div>
 
-	            {projectionRows && projectionRows.length > 0 && (
+	            {comparisonRows && comparisonRows.length > 0 && (
 	              <div
 	                style={{
 	                  background: "var(--bg2)",
@@ -7150,7 +7264,7 @@
 	                >
 	                  <div>
 	                    <div style={{ fontSize: 16, fontWeight: 600 }}>
-	                      Year-over-Year Simulation
+	                      Year-over-Year Country Comparison
 	                    </div>
 	                    <div
 	                      style={{
@@ -7160,33 +7274,144 @@
 	                        lineHeight: 1.6,
 	                      }}
 	                    >
-	                      {income.simulationYears || projectionRows.length}-year projection
-	                      using current tax-year rules as a steady-state model.
+	                      {projectionYears}-year projection using the current tax-year
+	                      rules as a steady-state model, shown side by side for two
+	                      expat countries.
 	                      {passiveIncomeMode === "portfolio" &&
 	                        " Portfolio income is derived from your asset mix and expected return assumptions."}
 	                    </div>
 	                  </div>
-	                  {passiveIncomeMode === "portfolio" && passiveDerived && (
+	                </div>
+	                <div
+	                  style={{
+	                    display: "grid",
+	                    gridTemplateColumns: "1fr 1fr",
+	                    gap: 12,
+	                    marginBottom: 14,
+	                  }}
+	                >
+	                  {[
+	                    {
+	                      label: "Country A",
+	                      value: compareCountryA,
+	                      onChange: setCompareCountryA,
+	                      scenario: compareScenarioA,
+	                      tone: "var(--blue)",
+	                    },
+	                    {
+	                      label: "Country B",
+	                      value: compareCountryB,
+	                      onChange: setCompareCountryB,
+	                      scenario: compareScenarioB,
+	                      tone: "var(--orange)",
+	                    },
+	                  ].map((item) => (
 	                    <div
+	                      key={item.label}
 	                      style={{
-	                        display: "flex",
-	                        gap: 8,
-	                        flexWrap: "wrap",
-	                        alignItems: "center",
+	                        background: "var(--bg3)",
+	                        border: "1px solid var(--border)",
+	                        borderRadius: 8,
+	                        padding: 14,
 	                      }}
 	                    >
-	                      <span className="badge badge-blue">
-	                        Start portfolio {fmtU(income.portfolioValue || 0)}
-	                      </span>
-	                      <span className="badge badge-green">
-	                        Return {pct(passiveDerived.expectedAnnualReturnPct)}
-	                      </span>
-	                      <span className="badge badge-orange">
-	                        Inflation {pct(income.inflationPct || 0)}
-	                      </span>
+	                      <div
+	                        style={{
+	                          display: "flex",
+	                          justifyContent: "space-between",
+	                          gap: 8,
+	                          alignItems: "center",
+	                          marginBottom: 10,
+	                        }}
+	                      >
+	                        <div className="label" style={{ marginBottom: 0 }}>
+	                          {item.label}
+	                        </div>
+	                        <select
+	                          value={item.value}
+	                          onChange={(e) => item.onChange(e.target.value)}
+	                          style={{ width: 150 }}
+	                        >
+	                          {countryOptions.map((country) => (
+	                            <option key={country} value={country}>
+	                              {country}
+	                            </option>
+	                          ))}
+	                        </select>
+	                      </div>
+	                      <div
+	                        style={{
+	                          display: "grid",
+	                          gridTemplateColumns: "repeat(3, 1fr)",
+	                          gap: 10,
+	                        }}
+	                      >
+	                        <div>
+	                          <div className="metric-label">US Tax</div>
+	                          <div
+	                            style={{
+	                              fontFamily: "'IBM Plex Mono',monospace",
+	                              fontWeight: 600,
+	                              color: item.tone,
+	                            }}
+	                          >
+	                            {fmtU(item.scenario.totalUSTax)}
+	                          </div>
+	                        </div>
+	                        <div>
+	                          <div className="metric-label">{item.value} Tax</div>
+	                          <div
+	                            style={{
+	                              fontFamily: "'IBM Plex Mono',monospace",
+	                              fontWeight: 600,
+	                              color: item.tone,
+	                            }}
+	                          >
+	                            {fmtU(item.scenario.totalIndiaTaxUSD)}
+	                          </div>
+	                        </div>
+	                        <div>
+	                          <div className="metric-label">Combined</div>
+	                          <div
+	                            style={{
+	                              fontFamily: "'IBM Plex Mono',monospace",
+	                              fontWeight: 600,
+	                              color: item.tone,
+	                            }}
+	                          >
+	                            {fmtU(item.scenario.combinedTaxUSD)}
+	                          </div>
+	                        </div>
+	                      </div>
 	                    </div>
-	                  )}
+	                  ))}
 	                </div>
+	                {compareCountryA === compareCountryB && (
+	                  <div className="info-box" style={{ marginBottom: 14 }}>
+	                    Pick two different countries to see a meaningful comparison.
+	                  </div>
+	                )}
+	                {passiveIncomeMode === "portfolio" && passiveDerived && (
+	                  <div
+	                    style={{
+	                      display: "flex",
+	                      gap: 8,
+	                      flexWrap: "wrap",
+	                      alignItems: "center",
+	                      marginBottom: 14,
+	                    }}
+	                  >
+	                    <span className="badge badge-blue">
+	                      Start portfolio {fmtU(planningIncomeUSD.portfolioValue || 0)}
+	                    </span>
+	                    <span className="badge badge-green">
+	                      Return {pct(passiveDerived.expectedAnnualReturnPct)}
+	                    </span>
+	                    <span className="badge badge-orange">
+	                      Inflation {pct(income.inflationPct || 0)}
+	                    </span>
+	                  </div>
+	                )}
 	                <div style={{ overflowX: "auto" }}>
 	                  <table
 	                    style={{
@@ -7199,14 +7424,15 @@
 	                      <tr style={{ color: "var(--text3)", textAlign: "left" }}>
 	                        {[
 	                          "Year",
-	                          "Income",
-	                          "US Tax",
-	                          settings.expatCountry + " Tax",
-	                          "Combined Tax",
-	                          "Eff. Rate",
+	                          `${compareCountryA} Combined`,
+	                          `${compareCountryB} Combined`,
+	                          "Tax Delta",
+	                          `${compareCountryA} Local Tax`,
+	                          `${compareCountryB} Local Tax`,
 	                          "Passive Income",
 	                          "Portfolio Start",
-	                          "Portfolio End",
+	                          `${compareCountryA} Portfolio End`,
+	                          `${compareCountryB} Portfolio End`,
 	                          "Real End",
 	                        ].map((head) => (
 	                          <th
@@ -7223,37 +7449,52 @@
 	                      </tr>
 	                    </thead>
 	                    <tbody>
-	                      {projectionRows.map((row) => (
+	                      {comparisonRows.map((row) => (
 	                        <tr key={row.year}>
 	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)" }}>
 	                            {row.year}
 	                          </td>
 	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace" }}>
-	                            {fmtU(row.incomeUSD)}
+	                            {fmtU(row.countryA.combinedTaxUSD)}
 	                          </td>
 	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace" }}>
-	                            {fmtU(row.usTaxUSD)}
+	                            {fmtU(row.countryB.combinedTaxUSD)}
+	                          </td>
+	                          <td
+	                            style={{
+	                              padding: "10px",
+	                              borderBottom: "1px solid var(--border)",
+	                              fontFamily: "'IBM Plex Mono',monospace",
+	                              color:
+	                                row.taxDeltaUSD > 0
+	                                  ? "var(--red)"
+	                                  : row.taxDeltaUSD < 0
+	                                    ? "var(--green)"
+	                                    : "var(--text2)",
+	                            }}
+	                          >
+	                            {fmtU(row.taxDeltaUSD)}
 	                          </td>
 	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace" }}>
-	                            {fmtU(row.expatTaxUSD)}
+	                            {fmtU(row.countryA.expatTaxUSD)}
 	                          </td>
 	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace" }}>
-	                            {fmtU(row.combinedTaxUSD)}
-	                          </td>
-	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>
-	                            {pct(row.effectiveRatePct)}
+	                            {fmtU(row.countryB.expatTaxUSD)}
 	                          </td>
 	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace" }}>
-	                            {fmtU(row.passiveCashUSD)}
+	                            {fmtU(Math.max(row.countryA.passiveCashUSD || 0, row.countryB.passiveCashUSD || 0))}
 	                          </td>
-	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.portfolioStart > 0 ? "var(--text)" : "var(--text3)" }}>
-	                            {row.portfolioStart > 0 ? fmtU(row.portfolioStart) : "—"}
+	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryA.portfolioStart > 0 ? "var(--text)" : "var(--text3)" }}>
+	                            {row.countryA.portfolioStart > 0 ? fmtU(row.countryA.portfolioStart) : "—"}
 	                          </td>
-	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.portfolioEnd > 0 ? "var(--text)" : "var(--text3)" }}>
-	                            {row.portfolioEnd > 0 ? fmtU(row.portfolioEnd) : "—"}
+	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryA.portfolioEnd > 0 ? "var(--text)" : "var(--text3)" }}>
+	                            {row.countryA.portfolioEnd > 0 ? fmtU(row.countryA.portfolioEnd) : "—"}
 	                          </td>
-	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.realPortfolioEnd > 0 ? "var(--text2)" : "var(--text3)" }}>
-	                            {row.realPortfolioEnd > 0 ? fmtU(row.realPortfolioEnd) : "—"}
+	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryB.portfolioEnd > 0 ? "var(--text)" : "var(--text3)" }}>
+	                            {row.countryB.portfolioEnd > 0 ? fmtU(row.countryB.portfolioEnd) : "—"}
+	                          </td>
+	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryA.realPortfolioEnd > 0 ? "var(--text2)" : "var(--text3)" }}>
+	                            {row.countryA.realPortfolioEnd > 0 ? fmtU(row.countryA.realPortfolioEnd) : "—"}
 	                          </td>
 	                        </tr>
 	                      ))}
@@ -7560,8 +7801,9 @@
                   If you stay in Malaysia for at least 182 days in a calendar
                   year, you become a tax resident.
                   <strong>Tax Resident:</strong> Taxed at progressive rates
-                  (0-30%) and eligible for personal tax reliefs (e.g., RM9,000
-                  basic, spouse, lifestyle reliefs).
+	                  (0-30%) and eligible for personal tax reliefs (e.g., about{" "}
+	                  <Num v={9000} currency="MYR" /> basic relief, plus spouse and
+	                  lifestyle reliefs).
                   <strong>Non-Resident:</strong> Taxed at a flat 30% with no
                   personal reliefs. Managing your days to qualify as a resident
                   usually lowers your overall tax burden unless your income is
@@ -7646,14 +7888,15 @@
                 {!indiaNewRegime && (
                   <OpCard
                     emoji="📊"
-                    title="Section 80C — ₹1.5L Deduction Per Spouse"
+	                    title="Section 80C Deduction Per Spouse"
                     country="India — Old Regime"
                     saving={india80CSaving / inrToUsd}
                     savingLabel={`~${fmtI(india80CSaving)} (both spouses)`}
                     priority="high"
                   >
-                    Both spouses can each claim ₹1,50,000 under 80C ={" "}
-                    <Num v={300000} currency="INR" /> combined. At your{" "}
+	                    Both spouses can each claim the 80C limit, shown here as{" "}
+	                    <Num v={150000} currency="INR" /> each and{" "}
+	                    <Num v={300000} currency="INR" /> combined. At your{" "}
                     {pct(indiaMarginalSlab * 100)} slab + cess/surcharge, that's
                     ~<Num v={india80CSaving} currency="INR" /> saved. Best
                     options for expats: <strong>PPF</strong> (if account already
@@ -7669,14 +7912,15 @@
                 {!indiaNewRegime && indiaSalaryINR > 0 && (
                   <OpCard
                     emoji="🏦"
-                    title="NPS — Extra ₹50K Under 80CCD(1B)"
+	                    title="NPS — Extra 80CCD(1B) Room"
                     country="India — Old Regime"
                     saving={indiaNPSSaving / inrToUsd}
                     savingLabel={`~${fmtI(indiaNPSSaving)} (both)`}
                     priority="medium"
                   >
-                    Beyond 80C, each spouse can claim ₹50,000 additional
-                    deduction under 80CCD(1B) for NPS Tier-I contributions.
+	                    Beyond 80C, each spouse can claim an additional{" "}
+	                    <Num v={50000} currency="INR" /> deduction under 80CCD(1B)
+	                    for NPS Tier-I contributions.
                     Combined saving: ~<Num v={indiaNPSSaving} currency="INR" />.
                     At maturity: 60% withdrawal is tax-free, 40% must buy an
                     annuity (annuity income is taxable). Lock-in until age 60.
@@ -7731,10 +7975,12 @@
                     savingLabel={`~${fmtI(india80DSaving)}`}
                     priority="medium"
                   >
-                    ₹25,000 per spouse for self/family health insurance +
-                    ₹25,000 each for parents (₹50,000 if parents are senior
-                    citizens). Total possible deduction: ₹
-                    {isMFJ ? "2,00,000" : "1,00,000"} combined. Saving at{" "}
+	                    <Num v={25000} currency="INR" /> per spouse for self/family
+	                    health insurance + <Num v={25000} currency="INR" /> each for
+	                    parents (<Num v={50000} currency="INR" /> if parents are
+	                    senior citizens). Total possible deduction:{" "}
+	                    <Num v={isMFJ ? 200000 : 100000} currency="INR" /> combined.
+	                    Saving at{" "}
                     {pct(indiaMarginalSlab * 100)} slab: ~
                     <Num v={india80DSaving} currency="INR" />.
                   </OpCard>
@@ -7748,8 +7994,8 @@
                   saving={null}
                   priority="high"
                 >
-                  Each spouse has their own ₹
-                  <Num v={indiaExemptionINR} currency="INR" /> basic exemption
+	                  Each spouse has their own{" "}
+	                  <Num v={indiaExemptionINR} currency="INR" /> basic exemption
                   and slab slabs. You're already splitting — but the split must
                   reflect genuine economic contribution.{" "}
                   <strong>Clubbing (Sec 64)</strong> applies if income-producing
@@ -7762,7 +8008,8 @@
                     <>
                       {" "}
                       At {pct(indiaMarginalSlab * 100)} marginal slab, shifting
-                      ₹10L from the higher-earning to lower-earning spouse saves
+	                      shifting <Num v={1000000} currency="INR" /> from the
+	                      higher-earning to lower-earning spouse saves
                       ~
                       <Num
                         v={1000000 * indiaMarginalSlab * indiaEffMultiplier}
@@ -7804,13 +8051,14 @@
                     )}
                     {taxYear >= 2024 ? (
                       <>
-                        The ₹1L LTCG exemption was removed in Budget 2024 — all
-                        LTCG above ₹0 is taxed at 12.5%.
+	                        The former LTCG exemption was removed in Budget 2024 —
+	                        all LTCG above <Num v={0} currency="INR" /> is taxed at
+	                        12.5%.
                       </>
                     ) : (
                       <>
-                        Book LTCG up to ₹1,25,000 tax-free per person before 31
-                        March; excess at 10%.
+	                        Book LTCG up to <Num v={125000} currency="INR" /> tax-free
+	                        per person before 31 March; excess at 10%.
                       </>
                     )}
                     <br />• <strong>Tax-loss harvesting before 31 March</strong>
@@ -8177,10 +8425,11 @@
                 <span className="nav-chip">
                   {settings.filingStatus === "mfj" ? "MFJ" : "Single"}
                 </span>
-                <span className="nav-chip">
-                  {expatCountry === "Malaysia" ? "RM" : "₹"}
-                  {expatToUsd}/$1
-                </span>
+	                <span className="nav-chip">
+	                  {tab === "planning"
+	                    ? "$ planning view"
+	                    : `${expatCountry === "Malaysia" ? "RM" : "₹"}${expatToUsd}/$1`}
+	                </span>
                 <span className="nav-chip accent">
                   {isCombined ? "Combined mode" : "By-country mode"}
                 </span>
