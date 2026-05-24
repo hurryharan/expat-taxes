@@ -2190,7 +2190,7 @@
       function buildProjectionRows({ settings, income }) {
         const years = Math.max(
           1,
-          Math.min(30, Math.round(income.simulationYears || 10)),
+          Math.min(60, Math.round(income.simulationYears || 10)),
         );
         const inflationPct = Math.max(0, income.inflationPct || 0);
         const earnedIncomeGrowthPct = Math.max(
@@ -3225,8 +3225,8 @@
               <NumberInput
                 label="Projection Years"
                 value={inc.simulationYears}
-                onChange={(v) => upd("simulationYears", Math.max(1, Math.min(30, v)))}
-                note="1 to 30 years"
+                onChange={(v) => upd("simulationYears", Math.max(1, Math.min(60, v)))}
+                note="1 to 60 years"
               />
               <NumberInput
                 label="Earned Income Growth (%)"
