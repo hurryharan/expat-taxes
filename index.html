@@ -7201,6 +7201,28 @@
             }),
           [compareRowsA, compareRowsB],
         );
+        const comparisonSummary = React.useMemo(() => {
+          const rows = comparisonRows || [];
+          const totalTaxA = rows.reduce(
+            (sum, row) => sum + (row.countryA.combinedTaxUSD || 0),
+            0,
+          );
+          const totalTaxB = rows.reduce(
+            (sum, row) => sum + (row.countryB.combinedTaxUSD || 0),
+            0,
+          );
+          const last = rows[rows.length - 1] || {};
+          const portfolioA = last.countryA?.portfolioEnd || 0;
+          const portfolioB = last.countryB?.portfolioEnd || 0;
+          return {
+            totalTaxA,
+            totalTaxB,
+            taxDelta: totalTaxA - totalTaxB,
+            portfolioA,
+            portfolioB,
+            portfolioDelta: portfolioA - portfolioB,
+          };
+        }, [comparisonRows]);
         const projectionYears = income.simulationYears || comparisonRows.length;
 
         const r = usResult;
@@ -7833,6 +7855,99 @@
                       </span>
 	                  </div>
 	                )}
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(3, minmax(180px, 1fr))",
+                      gap: 12,
+                      marginBottom: 14,
+                    }}
+                  >
+                    {[
+                      {
+                        label: `${compareCountryA} Total Tax`,
+                        value: fmtU(comparisonSummary.totalTaxA),
+                        sub: `${projectionYears}-year cumulative`,
+                        color: "var(--blue)",
+                      },
+                      {
+                        label: `${compareCountryB} Total Tax`,
+                        value: fmtU(comparisonSummary.totalTaxB),
+                        sub: `${projectionYears}-year cumulative`,
+                        color: "var(--orange)",
+                      },
+                      {
+                        label: "Tax Delta",
+                        value: fmtU(comparisonSummary.taxDelta),
+                        sub:
+                          comparisonSummary.taxDelta > 0
+                            ? `${compareCountryA} higher`
+                            : comparisonSummary.taxDelta < 0
+                              ? `${compareCountryB} higher`
+                              : "No difference",
+                        color:
+                          comparisonSummary.taxDelta > 0
+                            ? "var(--red)"
+                            : comparisonSummary.taxDelta < 0
+                              ? "var(--green)"
+                              : "var(--text2)",
+                      },
+                      {
+                        label: `${compareCountryA} Portfolio Total`,
+                        value: fmtU(comparisonSummary.portfolioA),
+                        sub: "Final projected value",
+                        color: "var(--blue)",
+                      },
+                      {
+                        label: `${compareCountryB} Portfolio Total`,
+                        value: fmtU(comparisonSummary.portfolioB),
+                        sub: "Final projected value",
+                        color: "var(--orange)",
+                      },
+                      {
+                        label: "Portfolio Delta",
+                        value: fmtU(comparisonSummary.portfolioDelta),
+                        sub:
+                          comparisonSummary.portfolioDelta > 0
+                            ? `${compareCountryA} higher`
+                            : comparisonSummary.portfolioDelta < 0
+                              ? `${compareCountryB} higher`
+                              : "No difference",
+                        color:
+                          comparisonSummary.portfolioDelta > 0
+                            ? "var(--green)"
+                            : comparisonSummary.portfolioDelta < 0
+                              ? "var(--red)"
+                              : "var(--text2)",
+                      },
+                    ].map((item) => (
+                      <div
+                        key={item.label}
+                        style={{
+                          background: "var(--bg3)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 8,
+                          padding: 14,
+                        }}
+                      >
+                        <div className="metric-label">{item.label}</div>
+                        <div
+                          style={{
+                            fontSize: 20,
+                            fontWeight: 700,
+                            fontFamily: "'IBM Plex Mono',monospace",
+                            color: item.color,
+                            marginTop: 4,
+                          }}
+                        >
+                          {item.value}
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>
+                          {item.sub}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                   <div
                     style={{
                       display: "grid",
