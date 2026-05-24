@@ -1763,6 +1763,89 @@
         );
       }
 
+      function rothBracketCeiling(targetRate, filingStatus) {
+        const isMFJ = filingStatus === "mfj";
+        const mfj = {
+          0.1: 23200,
+          0.12: 94300,
+          0.22: 201050,
+          0.24: 383900,
+          0.32: 487450,
+          0.35: 731200,
+        };
+        const single = {
+          0.1: 11600,
+          0.12: 47150,
+          0.22: 100525,
+          0.24: 191950,
+          0.32: 243725,
+          0.35: 609350,
+        };
+        const table = isMFJ ? mfj : single;
+        return table[targetRate] || table[0.22];
+      }
+
+      function calcOptimalRothConversion({
+        settings,
+        projectedIncome,
+        iraBalance,
+        rmdAmount,
+        ssTaxableIncome,
+        ordinaryIncomeBeforeConversion,
+      }) {
+        if (!projectedIncome.enableRothConversion || projectedIncome.passiveIncomeMode !== "portfolio") {
+          return 0;
+        }
+        const iraAfterRmd = Math.max(0, iraBalance - rmdAmount);
+        if (iraAfterRmd <= 0) return 0;
+
+        const targetRate = Number(projectedIncome.rothConversionTargetRate || 0.22);
+        const stdDed = (settings.filingStatus || "mfj") === "mfj" ? 29200 : 14600;
+        const bracketCeiling = rothBracketCeiling(targetRate, settings.filingStatus);
+        const taxablePreConversion = Math.max(
+          0,
+          ordinaryIncomeBeforeConversion + ssTaxableIncome - stdDed,
+        );
+        const maxConvert = Math.min(
+          iraAfterRmd,
+          Math.max(0, bracketCeiling - taxablePreConversion),
+        );
+        if (maxConvert <= 0) return 0;
+
+        const baseIncome = {
+          ...projectedIncome,
+          iraDistribution: rmdAmount,
+          ssTaxableIncome,
+        };
+        const baseTax = computeScenario({ settings, income: baseIncome }).combinedTaxUSD || 0;
+        const taxCostFor = (conversion) => {
+          const scenario = computeScenario({
+            settings,
+            income: {
+              ...projectedIncome,
+              iraDistribution: rmdAmount + conversion,
+              ssTaxableIncome,
+            },
+          });
+          return Math.max(0, (scenario.combinedTaxUSD || 0) - baseTax);
+        };
+
+        if (taxCostFor(1) > targetRate) return 0;
+        if (taxCostFor(maxConvert) / maxConvert <= targetRate) {
+          return Math.round(maxConvert);
+        }
+
+        let low = 0;
+        let high = maxConvert;
+        for (let i = 0; i < 18; i += 1) {
+          const mid = (low + high) / 2;
+          const effectiveRate = mid > 0 ? taxCostFor(mid) / mid : 0;
+          if (effectiveRate <= targetRate) low = mid;
+          else high = mid;
+        }
+        return Math.round(low);
+      }
+
       function computeScenario({ settings, income }) {
         const {
           passiveIncomeMode,
@@ -2232,19 +2315,14 @@
             baseOtherIncome,
             (settings.filingStatus || "mfj") === "mfj",
           );
-
-          const rothRateMap = {
-            0.1: 23200, 0.12: 94300, 0.22: 201050, 0.24: 383900, 0.32: 487450, 0.35: 731200,
-          };
-          const targetRate = Number(income.rothConversionTargetRate || 0.22);
-          const bracketCeiling = rothRateMap[targetRate] || rothRateMap[0.22];
-          const stdDed = (settings.filingStatus || "mfj") === "mfj" ? 29200 : 14600;
-          const taxablePreConversion = Math.max(0, baseOtherIncome + ssTaxableIncome - stdDed);
-          const conversionRoom = Math.max(0, bracketCeiling - taxablePreConversion);
-          const rothConversionUSD =
-            income.enableRothConversion && income.passiveIncomeMode === "portfolio"
-              ? Math.min(iraStart - rmdAmount, conversionRoom)
-              : 0;
+          const rothConversionUSD = calcOptimalRothConversion({
+            settings,
+            projectedIncome,
+            iraBalance: iraStart,
+            rmdAmount,
+            ssTaxableIncome,
+            ordinaryIncomeBeforeConversion: baseOtherIncome,
+          });
 
           projectedIncome.iraDistribution = rmdAmount + rothConversionUSD;
           projectedIncome.ssGrossIncome = annualSSRaw;
@@ -2637,8 +2715,11 @@
         const [display, setDisplay] = React.useState(
           value === 0 ? "" : String(value),
         );
+        const focusedRef = React.useRef(false);
         React.useEffect(() => {
-          setDisplay(value === 0 ? "" : String(value));
+          if (!focusedRef.current) {
+            setDisplay(value === 0 ? "" : String(value));
+          }
         }, [value]);
         return (
           <div className="field-group">
@@ -2656,8 +2737,16 @@
                 inputMode="decimal"
                 value={display}
                 placeholder="0"
-                onChange={(e) => setDisplay(e.target.value)}
+                onFocus={() => {
+                  focusedRef.current = true;
+                }}
+                onChange={(e) => {
+                  const nextDisplay = e.target.value;
+                  setDisplay(nextDisplay);
+                  onChange(parseAmount(nextDisplay));
+                }}
                 onBlur={(e) => {
+                  focusedRef.current = false;
                   const n = parseAmount(e.target.value);
                   onChange(n);
                   setDisplay(n === 0 ? "" : String(n));
@@ -3446,7 +3535,7 @@
             home: "Overview",
             setup: "Setup",
             income: "Income",
-            results: "Results",
+            results: "Taxes",
             planning: "Planning",
           }[currentTab] || currentTab;
         const lines = [];
@@ -3845,7 +3934,7 @@
                     </button>
                     {hasIncome && (
                       <button className="ghost-btn" onClick={() => setTab("results")}>
-                        View Current Estimate
+                        View Current Taxes
                       </button>
                     )}
                   </div>
@@ -3950,9 +4039,17 @@
       // ============================================================
       // SETTINGS PANEL
       // ============================================================
-      function SettingsPanel({ settings, onSave }) {
+      function SettingsPanel({ settings, onSave, onChange }) {
         const [s, setS] = React.useState({ ...settings });
-        const upd = (k, v) => setS((prev) => ({ ...prev, [k]: v }));
+        React.useEffect(() => {
+          setS({ ...settings });
+        }, [settings]);
+        const updMany = (updates) => {
+          const next = { ...s, ...updates };
+          setS(next);
+          onChange(next);
+        };
+        const upd = (k, v) => updMany({ [k]: v });
 
         return (
           <div className="main-wrap">
@@ -3986,8 +4083,10 @@
                     <select
                       value={s.expatCountry}
                       onChange={(e) => {
-                        upd("expatCountry", e.target.value);
-                        upd("currency", "USD");
+                        updMany({
+                          expatCountry: e.target.value,
+                          currency: "USD",
+                        });
                       }}
                     >
                       <option value="India">India</option>
@@ -4194,14 +4293,13 @@
                                 s.expatCountry === "Malaysia" ? "MYR" : "INR"
                               ];
                             if (rate) {
-                              upd(
-                                s.expatCountry === "Malaysia"
+                              updMany({
+                                [s.expatCountry === "Malaysia"
                                   ? "myrToUsd"
-                                  : "inrToUsd",
-                                Math.round(rate * 100) / 100,
-                              );
-                              upd("fxStatus", "ok");
-                              upd("fxFetched", new Date().toLocaleString());
+                                  : "inrToUsd"]: Math.round(rate * 100) / 100,
+                                fxStatus: "ok",
+                                fxFetched: new Date().toLocaleString(),
+                              });
                             } else {
                               upd("fxStatus", "error");
                             }
@@ -4493,7 +4591,7 @@
                   >
                     Property Price ({pfx}
                     {(settings.usPropertyPrice || 0).toLocaleString()}) × 80% ÷
-                    27.5 years — set in Settings
+                    27.5 years — set in Setup
                   </div>
                 </div>
                 <NumberInput
@@ -4729,7 +4827,7 @@
                     >
                       Property Price ({pfx}
                       {(settings.usPropertyPrice || 0).toLocaleString()}) × 80%
-                      ÷ 27.5 years — set in Settings
+                      ÷ 27.5 years — set in Setup
                     </div>
                   </div>
                   <NumberInput
@@ -7411,6 +7509,75 @@
           );
         }
 
+        function CompareChart({ title, subtitle, valueA, valueB, formatter }) {
+          const rows = comparisonRows || [];
+          const values = rows.flatMap((row) => [
+            Math.max(0, valueA(row) || 0),
+            Math.max(0, valueB(row) || 0),
+          ]);
+          const max = Math.max(1, ...values);
+          const pointsFor = (getter) =>
+            rows
+              .map((row, idx) => {
+                const x = rows.length <= 1 ? 8 : 8 + (idx / (rows.length - 1)) * 184;
+                const y = 84 - (Math.max(0, getter(row) || 0) / max) * 68;
+                return `${x.toFixed(2)},${y.toFixed(2)}`;
+              })
+              .join(" ");
+          const last = rows[rows.length - 1] || {};
+          return (
+            <div
+              style={{
+                background: "var(--bg3)",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                padding: 14,
+                minWidth: 0,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{title}</div>
+                  <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 2 }}>
+                    {subtitle}
+                  </div>
+                </div>
+              </div>
+              <svg viewBox="0 0 200 92" width="100%" height="92" role="img" aria-label={title}>
+                <line x1="8" y1="84" x2="192" y2="84" stroke="var(--border2)" />
+                <polyline
+                  points={pointsFor(valueA)}
+                  fill="none"
+                  stroke="var(--blue)"
+                  strokeWidth="3"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                />
+                <polyline
+                  points={pointsFor(valueB)}
+                  fill="none"
+                  stroke="var(--orange)"
+                  strokeWidth="3"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 12 }}>
+                <div>
+                  <span style={{ color: "var(--blue)", fontWeight: 700 }}>--</span>{" "}
+                  {compareCountryA}:{" "}
+                  <span className="mono">{formatter(valueA(last) || 0)}</span>
+                </div>
+                <div>
+                  <span style={{ color: "var(--orange)", fontWeight: 700 }}>--</span>{" "}
+                  {compareCountryB}:{" "}
+                  <span className="mono">{formatter(valueB(last) || 0)}</span>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
         const indiaExemptionINR =
           taxYear >= 2025 ? 400000 : taxYear >= 2023 ? 300000 : 250000;
 
@@ -7661,11 +7828,45 @@
 	                    <span className="badge badge-orange">
 	                      Inflation {pct(income.inflationPct || 0)}
 	                    </span>
+                      <span className="badge badge-blue">
+                        Roth conversions optimized per country
+                      </span>
 	                  </div>
 	                )}
-	                <div style={{ overflowX: "auto" }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(3, minmax(220px, 1fr))",
+                      gap: 12,
+                      marginBottom: 14,
+                    }}
+                  >
+                    <CompareChart
+                      title="Income"
+                      subtitle="Projected taxable income context"
+                      valueA={(row) => row.countryA.incomeUSD}
+                      valueB={(row) => row.countryB.incomeUSD}
+                      formatter={fmtU}
+                    />
+                    <CompareChart
+                      title="Tax"
+                      subtitle="Combined US + local country tax"
+                      valueA={(row) => row.countryA.combinedTaxUSD}
+                      valueB={(row) => row.countryB.combinedTaxUSD}
+                      formatter={fmtU}
+                    />
+                    <CompareChart
+                      title="Portfolio"
+                      subtitle="After annual growth and modeled tax drag"
+                      valueA={(row) => row.countryA.portfolioEnd}
+                      valueB={(row) => row.countryB.portfolioEnd}
+                      formatter={fmtU}
+                    />
+                  </div>
+	                <div style={{ overflow: "auto", maxHeight: 520, border: "1px solid var(--border)", borderRadius: 8 }}>
 	                  <table
 	                    style={{
+	                      minWidth: 1900,
 	                      width: "100%",
 	                      borderCollapse: "collapse",
 	                      fontSize: 13,
@@ -7683,9 +7884,11 @@
 	                          `${compareCountryA} Local Drag`,
 	                          `${compareCountryB} US Drag`,
 	                          `${compareCountryB} Local Drag`,
-                            "RMD",
+                            `${compareCountryA} RMD`,
+                            `${compareCountryB} RMD`,
                             "SS Income",
-                            "Roth Conv.",
+                            `${compareCountryA} Roth Conv.`,
+                            `${compareCountryB} Roth Conv.`,
 	                          `${compareCountryA} Brokerage`,
 	                          `${compareCountryA} IRA`,
                             `${compareCountryA} Roth`,
@@ -7701,6 +7904,10 @@
 	                              padding: "8px 10px",
 	                              borderBottom: "1px solid var(--border)",
 	                              whiteSpace: "nowrap",
+                                position: "sticky",
+                                top: 0,
+                                zIndex: 2,
+                                background: "var(--bg3)",
 	                            }}
 	                          >
 	                            {head}
@@ -7754,10 +7961,16 @@
 	                            {row.countryA.rmdUSD > 0 ? fmtU(row.countryA.rmdUSD) : "—"}
 	                          </td>
                             <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace" }}>
+	                            {row.countryB.rmdUSD > 0 ? fmtU(row.countryB.rmdUSD) : "—"}
+	                          </td>
+                            <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace" }}>
 	                            {row.countryA.ssIncomeUSD > 0 ? fmtU(row.countryA.ssIncomeUSD) : "—"}
 	                          </td>
                             <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace" }}>
 	                            {row.countryA.rothConversionUSD > 0 ? fmtU(row.countryA.rothConversionUSD) : "—"}
+	                          </td>
+                            <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace" }}>
+	                            {row.countryB.rothConversionUSD > 0 ? fmtU(row.countryB.rothConversionUSD) : "—"}
 	                          </td>
 	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryA.portfolioEnd > 0 ? "var(--text)" : "var(--text3)" }}>
 	                            {row.countryA.brokerageEnd > 0 ? fmtU(row.countryA.brokerageEnd) : "—"}
@@ -8695,7 +8908,7 @@
                 { id: "home", label: "Overview" },
                 { id: "setup", label: "Setup" },
                 { id: "income", label: "Income" },
-                { id: "results", label: "Results" },
+                { id: "results", label: "Taxes" },
                 { id: "planning", label: "Planning" },
               ].map((item) => (
                 <button
@@ -8741,7 +8954,11 @@
             )}
 
             {tab === "setup" && (
-              <SettingsPanel settings={settings} onSave={handleSaveSettings} />
+              <SettingsPanel
+                settings={settings}
+                onSave={handleSaveSettings}
+                onChange={setSettings}
+              />
             )}
 
             {tab === "income" && (
@@ -8952,7 +9169,7 @@
                     className="info-box"
                     style={{ textAlign: "center", padding: 32 }}
                   >
-                    Enable at least one country in Settings to see results.
+                    Enable at least one country in Setup to see taxes.
                   </div>
                 )}
 
