@@ -7223,6 +7223,98 @@
             portfolioDelta: portfolioA - portfolioB,
           };
         }, [comparisonRows]);
+        const chartMetricOptions = [
+          {
+            id: "income",
+            label: "Income",
+            subtitle: "Projected taxable income context",
+            valueA: (row) => row.countryA.incomeUSD,
+            valueB: (row) => row.countryB.incomeUSD,
+          },
+          {
+            id: "combinedTax",
+            label: "Combined Tax",
+            subtitle: "US + local country tax",
+            valueA: (row) => row.countryA.combinedTaxUSD,
+            valueB: (row) => row.countryB.combinedTaxUSD,
+          },
+          {
+            id: "usDrag",
+            label: "US Drag",
+            subtitle: "US tax from portfolio income",
+            valueA: (row) => row.countryA.usTaxDragUSD,
+            valueB: (row) => row.countryB.usTaxDragUSD,
+          },
+          {
+            id: "localDrag",
+            label: "Local Drag",
+            subtitle: "Local-country tax from portfolio income",
+            valueA: (row) => row.countryA.expatTaxDragUSD,
+            valueB: (row) => row.countryB.expatTaxDragUSD,
+          },
+          {
+            id: "rmd",
+            label: "RMD",
+            subtitle: "Required minimum distributions",
+            valueA: (row) => row.countryA.rmdUSD,
+            valueB: (row) => row.countryB.rmdUSD,
+          },
+          {
+            id: "rothConversion",
+            label: "Roth Conversion",
+            subtitle: "Country-optimized conversion amount",
+            valueA: (row) => row.countryA.rothConversionUSD,
+            valueB: (row) => row.countryB.rothConversionUSD,
+          },
+          {
+            id: "brokerage",
+            label: "Brokerage",
+            subtitle: "Taxable brokerage ending value",
+            valueA: (row) => row.countryA.brokerageEnd,
+            valueB: (row) => row.countryB.brokerageEnd,
+          },
+          {
+            id: "ira",
+            label: "Traditional IRA",
+            subtitle: "Traditional IRA ending value",
+            valueA: (row) => row.countryA.iraEnd,
+            valueB: (row) => row.countryB.iraEnd,
+          },
+          {
+            id: "roth",
+            label: "Roth IRA",
+            subtitle: "Roth IRA ending value",
+            valueA: (row) => row.countryA.rothEnd,
+            valueB: (row) => row.countryB.rothEnd,
+          },
+          {
+            id: "portfolioEnd",
+            label: "Portfolio End",
+            subtitle: "Nominal ending portfolio value",
+            valueA: (row) => row.countryA.portfolioEnd,
+            valueB: (row) => row.countryB.portfolioEnd,
+          },
+          {
+            id: "realEnd",
+            label: "Real End",
+            subtitle: "Inflation-adjusted ending value",
+            valueA: (row) => row.countryA.realPortfolioEnd,
+            valueB: (row) => row.countryB.realPortfolioEnd,
+          },
+        ];
+        const [selectedChartMetricIds, setSelectedChartMetricIds] =
+          React.useState(["income", "combinedTax", "portfolioEnd"]);
+        const selectedChartMetrics = chartMetricOptions.filter((option) =>
+          selectedChartMetricIds.includes(option.id),
+        );
+        function toggleChartMetric(id) {
+          setSelectedChartMetricIds((prev) => {
+            if (prev.includes(id)) {
+              return prev.length > 1 ? prev.filter((item) => item !== id) : prev;
+            }
+            return [...prev, id];
+          });
+        }
         const projectionYears = income.simulationYears || comparisonRows.length;
 
         const r = usResult;
@@ -7950,38 +8042,81 @@
                   </div>
                   <div
                     style={{
+                      background: "var(--bg3)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 8,
+                      padding: 14,
+                      marginBottom: 14,
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>
+                          Visualized Columns
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 2 }}>
+                          Pick one or more paired table metrics to chart.
+                        </div>
+                      </div>
+                      <span className="badge badge-blue">
+                        {selectedChartMetrics.length} selected
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {chartMetricOptions.map((option) => (
+                        <label
+                          key={option.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                            border: "1px solid var(--border)",
+                            borderRadius: 6,
+                            padding: "6px 9px",
+                            fontSize: 12,
+                            color: selectedChartMetricIds.includes(option.id)
+                              ? "var(--text)"
+                              : "var(--text3)",
+                            background: selectedChartMetricIds.includes(option.id)
+                              ? "var(--bg4)"
+                              : "transparent",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedChartMetricIds.includes(option.id)}
+                            onChange={() => toggleChartMetric(option.id)}
+                            style={{ width: "auto" }}
+                          />
+                          {option.label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div
+                    style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(3, minmax(220px, 1fr))",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
                       gap: 12,
                       marginBottom: 14,
                     }}
                   >
-                    <CompareChart
-                      title="Income"
-                      subtitle="Projected taxable income context"
-                      valueA={(row) => row.countryA.incomeUSD}
-                      valueB={(row) => row.countryB.incomeUSD}
-                      formatter={fmtU}
-                    />
-                    <CompareChart
-                      title="Tax"
-                      subtitle="Combined US + local country tax"
-                      valueA={(row) => row.countryA.combinedTaxUSD}
-                      valueB={(row) => row.countryB.combinedTaxUSD}
-                      formatter={fmtU}
-                    />
-                    <CompareChart
-                      title="Portfolio"
-                      subtitle="After annual growth and modeled tax drag"
-                      valueA={(row) => row.countryA.portfolioEnd}
-                      valueB={(row) => row.countryB.portfolioEnd}
-                      formatter={fmtU}
-                    />
+                    {selectedChartMetrics.map((metric) => (
+                      <CompareChart
+                        key={metric.id}
+                        title={metric.label}
+                        subtitle={metric.subtitle}
+                        valueA={metric.valueA}
+                        valueB={metric.valueB}
+                        formatter={fmtU}
+                      />
+                    ))}
                   </div>
 	                <div style={{ overflow: "auto", maxHeight: 520, border: "1px solid var(--border)", borderRadius: 8 }}>
 	                  <table
 	                    style={{
-	                      minWidth: 1900,
+	                      minWidth: 2100,
 	                      width: "100%",
 	                      borderCollapse: "collapse",
 	                      fontSize: 13,
@@ -8010,6 +8145,8 @@
 	                          `${compareCountryB} Brokerage`,
 	                          `${compareCountryB} IRA`,
                             `${compareCountryB} Roth`,
+	                          `${compareCountryA} Portfolio End`,
+	                          `${compareCountryB} Portfolio End`,
 	                          `${compareCountryA} Real End`,
 	                          `${compareCountryB} Real End`,
 	                        ].map((head) => (
@@ -8104,6 +8241,12 @@
 	                          </td>
                             <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryB.portfolioEnd > 0 ? "var(--text)" : "var(--text3)" }}>
 	                            {row.countryB.rothEnd > 0 ? fmtU(row.countryB.rothEnd) : "—"}
+	                          </td>
+	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryA.portfolioEnd > 0 ? "var(--text)" : "var(--text3)" }}>
+	                            {row.countryA.portfolioEnd > 0 ? fmtU(row.countryA.portfolioEnd) : "—"}
+	                          </td>
+	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryB.portfolioEnd > 0 ? "var(--text)" : "var(--text3)" }}>
+	                            {row.countryB.portfolioEnd > 0 ? fmtU(row.countryB.portfolioEnd) : "—"}
 	                          </td>
 	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryA.realPortfolioEnd > 0 ? "var(--text2)" : "var(--text3)" }}>
 	                            {row.countryA.realPortfolioEnd > 0 ? fmtU(row.countryA.realPortfolioEnd) : "—"}
