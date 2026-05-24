@@ -1609,10 +1609,22 @@
         }
 
         const portfolioValue = Math.max(0, income.portfolioValue || 0);
-        const equityPct = clampPct(income.portfolioEquityPct, 60);
-        const fixedIncomePct = Math.max(0, 100 - equityPct);
-        const equityValue = portfolioValue * (equityPct / 100);
-        const fixedIncomeValue = portfolioValue * (fixedIncomePct / 100);
+        const brokeragePct = clampPct(income.portfolioBrokeragePct, 60);
+        const brokerageValue = portfolioValue * (brokeragePct / 100);
+        const iraValue = Math.max(0, portfolioValue - brokerageValue);
+        const rothValue = Math.max(0, income.portfolioRothValue || 0);
+        const brokerageEquityPct = clampPct(income.brokerageEquityPct, 60);
+        const iraEquityPct = clampPct(income.iraEquityPct, 60);
+        const rothEquityPct = clampPct(income.rothEquityPct, 60);
+        const brokerageFixedPct = 100 - brokerageEquityPct;
+        const iraFixedPct = 100 - iraEquityPct;
+        const rothFixedPct = 100 - rothEquityPct;
+        const brokerageEquityValue = brokerageValue * (brokerageEquityPct / 100);
+        const brokerageFixedValue = brokerageValue * (brokerageFixedPct / 100);
+        const iraEquityValue = iraValue * (iraEquityPct / 100);
+        const iraFixedValue = iraValue * (iraFixedPct / 100);
+        const rothEquityValue = rothValue * (rothEquityPct / 100);
+        const rothFixedValue = rothValue * (rothFixedPct / 100);
         const dividendYieldPct = Math.max(0, income.portfolioDividendYieldPct || 0);
         const qualifiedDividendPct = clampPct(
           income.portfolioQualifiedDividendPct,
@@ -1638,26 +1650,50 @@
           income.portfolioExpectedFixedIncomeGrowthPct || 0,
         );
 
-        const ordinaryDividends = equityValue * (dividendYieldPct / 100);
+        const ordinaryDividends = brokerageEquityValue * (dividendYieldPct / 100);
         const qualifiedDividends =
           ordinaryDividends * (qualifiedDividendPct / 100);
-        const interest = fixedIncomeValue * (interestYieldPct / 100);
-        const longTermGains = equityValue * (ltcgYieldPct / 100);
-        const shortTermGains = equityValue * (stcgYieldPct / 100);
+        const interest = brokerageFixedValue * (interestYieldPct / 100);
+        const longTermGains = brokerageEquityValue * (ltcgYieldPct / 100);
+        const shortTermGains = brokerageEquityValue * (stcgYieldPct / 100);
         const exemptIntDividends =
-          fixedIncomeValue * (exemptInterestYieldPct / 100);
+          brokerageFixedValue * (exemptInterestYieldPct / 100);
         const sec199aDividends =
-          equityValue * (sec199aDividendYieldPct / 100);
+          brokerageEquityValue * (sec199aDividendYieldPct / 100);
+        const brokerageReturnPct =
+          (brokerageEquityPct / 100) * expectedEquityGrowthPct +
+          (brokerageFixedPct / 100) * expectedFixedIncomeGrowthPct;
+        const iraReturnPct =
+          (iraEquityPct / 100) * expectedEquityGrowthPct +
+          (iraFixedPct / 100) * expectedFixedIncomeGrowthPct;
+        const rothReturnPct =
+          (rothEquityPct / 100) * expectedEquityGrowthPct +
+          (rothFixedPct / 100) * expectedFixedIncomeGrowthPct;
+        const totalPortfolioForReturn = brokerageValue + iraValue + rothValue;
         const expectedAnnualReturnPct =
-          (equityPct / 100) * expectedEquityGrowthPct +
-          (fixedIncomePct / 100) * expectedFixedIncomeGrowthPct;
+          totalPortfolioForReturn > 0
+            ? (brokerageValue * brokerageReturnPct +
+                iraValue * iraReturnPct +
+                rothValue * rothReturnPct) /
+              totalPortfolioForReturn
+            : 0;
 
         const passiveDerived = {
           portfolioValue,
-          equityPct,
-          fixedIncomePct,
-          equityValue,
-          fixedIncomeValue,
+          brokeragePct,
+          iraPct: 100 - brokeragePct,
+          brokerageEquityPct,
+          iraEquityPct,
+          rothEquityPct,
+          brokerageValue,
+          iraValue,
+          rothValue,
+          brokerageEquityValue,
+          brokerageFixedValue,
+          iraEquityValue,
+          iraFixedValue,
+          rothEquityValue,
+          rothFixedValue,
           ordinaryDividends,
           qualifiedDividends,
           interest,
@@ -1665,6 +1701,16 @@
           shortTermGains,
           exemptIntDividends,
           sec199aDividends,
+          taxableOrdinaryDividends: ordinaryDividends,
+          taxableQualifiedDividends: qualifiedDividends,
+          taxableInterest: interest,
+          taxableLTCG: longTermGains,
+          taxableSTCG: shortTermGains,
+          taxableExemptInt: exemptIntDividends,
+          taxableSec199a: sec199aDividends,
+          brokerageReturnPct,
+          iraReturnPct,
+          rothReturnPct,
           expectedAnnualReturnPct,
           estimatedPassiveIncome:
             ordinaryDividends +
@@ -1688,6 +1734,33 @@
             sec199aDividends: sec199aDividends,
           },
         };
+      }
+
+      function calcRMD(iraBalance, age) {
+        if (age < 73) return 0;
+        const table = {
+          73: 26.5, 74: 25.5, 75: 24.6, 76: 23.7, 77: 22.9, 78: 22.0, 79: 21.1,
+          80: 20.2, 81: 19.4, 82: 18.5, 83: 17.7, 84: 16.8, 85: 16.0, 86: 15.2,
+          87: 14.4, 88: 13.7, 89: 12.9, 90: 12.2, 91: 11.5, 92: 10.8, 93: 10.1,
+          94: 9.5, 95: 8.9, 96: 8.4, 97: 7.8, 98: 7.3, 99: 6.8, 100: 6.4,
+        };
+        const factor = table[Math.min(age, 100)] || 6.4;
+        return Math.max(0, iraBalance) / factor;
+      }
+
+      function calcSSTaxableAmount(ssBenefit, otherIncome, isMFJ) {
+        const provisional = Math.max(0, otherIncome) + Math.max(0, ssBenefit) * 0.5;
+        const thresh1 = isMFJ ? 32000 : 25000;
+        const thresh2 = isMFJ ? 44000 : 34000;
+        if (provisional <= thresh1) return 0;
+        if (provisional <= thresh2) {
+          return Math.min(ssBenefit * 0.5, (provisional - thresh1) * 0.5);
+        }
+        return Math.min(
+          ssBenefit * 0.85,
+          (provisional - thresh2) * 0.85 +
+            Math.min(ssBenefit * 0.5, (thresh2 - thresh1) * 0.5),
+        );
       }
 
       function computeScenario({ settings, income }) {
@@ -1797,6 +1870,7 @@
             ? 0
             : toINR(effectiveIncome.wages) +
               toINR(effectiveIncome.businessIncome) +
+              toINR(effectiveIncome.iraDistribution || 0) +
               toINR(effectiveIncome.interest) +
               toINR(effectiveIncome.ordinaryDividends)
           : toINR(effectiveIncome.indiaSalary) +
@@ -1813,6 +1887,7 @@
             ? 0
             : spouseVal("wages", 1) +
               spouseVal("businessIncome", 1) +
+              toINR(effectiveIncome.iraDistribution || 0) / 2 +
               (includeGlobalInvestment
                 ? toINR(effectiveIncome.interest || 0) / 2 +
                   toINR(effectiveIncome.ordinaryDividends || 0) / 2
@@ -1823,6 +1898,7 @@
             ? 0
             : spouseVal("wages", 2) +
               spouseVal("businessIncome", 2) +
+              toINR(effectiveIncome.iraDistribution || 0) / 2 +
               (includeGlobalInvestment
                 ? toINR(effectiveIncome.interest || 0) / 2 +
                   toINR(effectiveIncome.ordinaryDividends || 0) / 2
@@ -1960,7 +2036,10 @@
           : 0;
 
         const usIncome = {
-          wages: toUSD(effectiveIncome.wages),
+          wages:
+            toUSD(effectiveIncome.wages) +
+            toUSD(effectiveIncome.iraDistribution || 0) +
+            toUSD(effectiveIncome.ssTaxableIncome || 0),
           businessIncome: toUSD(effectiveIncome.businessIncome),
           rentalNet: usRentalNet,
           rentalMortgageInterest: toUSD(effectiveIncome.usRentalMortgageInterest),
@@ -2042,7 +2121,11 @@
         const contributionBase = Math.max(0, income.annualPortfolioContribution || 0);
         const withdrawalBase = Math.max(0, income.annualPortfolioWithdrawal || 0);
         const rows = [];
-        let portfolioStart = Math.max(0, income.portfolioValue || 0);
+        const startPortfolio = Math.max(0, income.portfolioValue || 0);
+        const startBrokeragePct = clampPct(income.portfolioBrokeragePct, 60) / 100;
+        let brokerageStart = startPortfolio * startBrokeragePct;
+        let iraStart = startPortfolio - brokerageStart;
+        let rothStart = Math.max(0, income.portfolioRothValue || 0);
 
         for (let i = 0; i < years; i += 1) {
           const projectedIncome = {
@@ -2124,8 +2207,48 @@
                 ? income.sec199aDividends || 0
                 : growByRate(income.sec199aDividends, inflationPct, i),
             portfolioValue:
-              income.passiveIncomeMode === "portfolio" ? portfolioStart : 0,
+              income.passiveIncomeMode === "portfolio"
+                ? Math.max(0, brokerageStart + iraStart)
+                : 0,
           };
+
+          const age = Math.max(0, (income.currentAge || 40) + i);
+          const annualSSRaw =
+            age >= (income.ssStartAge || 67)
+              ? growByRate((income.ssMonthlyBenefit || 0) * 12, inflationPct, i)
+              : 0;
+          const rmdAmount =
+            income.passiveIncomeMode === "portfolio" ? calcRMD(iraStart, age) : 0;
+          const baseOtherIncome =
+            projectedIncome.wages +
+            projectedIncome.businessIncome +
+            (projectedIncome.interest || 0) +
+            (projectedIncome.ordinaryDividends || 0) +
+            (projectedIncome.shortTermGains || 0) +
+            (projectedIncome.longTermGains || 0) +
+            rmdAmount;
+          const ssTaxableIncome = calcSSTaxableAmount(
+            annualSSRaw,
+            baseOtherIncome,
+            (settings.filingStatus || "mfj") === "mfj",
+          );
+
+          const rothRateMap = {
+            0.1: 23200, 0.12: 94300, 0.22: 201050, 0.24: 383900, 0.32: 487450, 0.35: 731200,
+          };
+          const targetRate = Number(income.rothConversionTargetRate || 0.22);
+          const bracketCeiling = rothRateMap[targetRate] || rothRateMap[0.22];
+          const stdDed = (settings.filingStatus || "mfj") === "mfj" ? 29200 : 14600;
+          const taxablePreConversion = Math.max(0, baseOtherIncome + ssTaxableIncome - stdDed);
+          const conversionRoom = Math.max(0, bracketCeiling - taxablePreConversion);
+          const rothConversionUSD =
+            income.enableRothConversion && income.passiveIncomeMode === "portfolio"
+              ? Math.min(iraStart - rmdAmount, conversionRoom)
+              : 0;
+
+          projectedIncome.iraDistribution = rmdAmount + rothConversionUSD;
+          projectedIncome.ssGrossIncome = annualSSRaw;
+          projectedIncome.ssTaxableIncome = ssTaxableIncome;
 
           const scenario = computeScenario({ settings, income: projectedIncome });
 
@@ -2156,19 +2279,36 @@
               scenario.usIncome.longTermGains +
               scenario.usIncome.shortTermGains
             : 0;
-          const portfolioEnd =
+          const brokerageReturnPct = scenario.passiveDerived?.brokerageReturnPct || 0;
+          const iraReturnPct = scenario.passiveDerived?.iraReturnPct || 0;
+          const rothReturnPct = scenario.passiveDerived?.rothReturnPct || 0;
+          const brokerageEnd =
             income.passiveIncomeMode === "portfolio"
               ? Math.max(
                   0,
-                  portfolioStart *
-                    (1 +
-                      ((scenario.passiveDerived?.expectedAnnualReturnPct || 0) /
-                        100)) +
+                  brokerageStart * (1 + brokerageReturnPct / 100) +
                     contribution -
                     withdrawal -
                     combinedTaxDragUSD,
                 )
               : 0;
+          const iraEnd =
+            income.passiveIncomeMode === "portfolio"
+              ? Math.max(
+                  0,
+                  (iraStart - rmdAmount - rothConversionUSD) *
+                    (1 + iraReturnPct / 100),
+                )
+              : 0;
+          const rothEnd =
+            income.passiveIncomeMode === "portfolio"
+              ? Math.max(
+                  0,
+                  (rothStart + rothConversionUSD) * (1 + rothReturnPct / 100),
+                )
+              : 0;
+          const portfolioStart = brokerageStart + iraStart + rothStart;
+          const portfolioEnd = brokerageEnd + iraEnd + rothEnd;
           const inflationFactor = Math.pow(1 + inflationPct / 100, i + 1);
 
           rows.push({
@@ -2186,6 +2326,14 @@
             portfolioContribution: contribution,
             portfolioWithdrawal: withdrawal,
             portfolioEnd,
+            brokerageEnd,
+            iraEnd,
+            rothEnd,
+            age,
+            rmdUSD: rmdAmount,
+            ssIncomeUSD: annualSSRaw,
+            ssTaxableUSD: ssTaxableIncome,
+            rothConversionUSD,
             usTaxDragUSD,
             expatTaxDragUSD,
             combinedTaxDragUSD,
@@ -2196,7 +2344,9 @@
           });
 
           if (income.passiveIncomeMode === "portfolio") {
-            portfolioStart = portfolioEnd;
+            brokerageStart = brokerageEnd;
+            iraStart = iraEnd;
+            rothStart = rothEnd;
           }
         }
 
@@ -2267,6 +2417,11 @@
         passiveIncomeMode: "manual",
         portfolioValue: 1000000,
         portfolioEquityPct: 60,
+        portfolioBrokeragePct: 60,
+        portfolioRothValue: 0,
+        brokerageEquityPct: 60,
+        iraEquityPct: 60,
+        rothEquityPct: 60,
         portfolioDividendYieldPct: 1.7,
         portfolioQualifiedDividendPct: 85,
         portfolioInterestYieldPct: 4.5,
@@ -2282,6 +2437,11 @@
         inflationPct: 2.5,
         annualPortfolioContribution: 0,
         annualPortfolioWithdrawal: 0,
+        currentAge: 40,
+        ssMonthlyBenefit: 0,
+        ssStartAge: 67,
+        enableRothConversion: false,
+        rothConversionTargetRate: 0.22,
         // US income
         wages: 0,
         businessIncome: 0,
@@ -2714,16 +2874,60 @@
                     prefix={pfx}
                   />
                   <NumberInput
-                    label="Equity Mix (%)"
-                    value={inc.portfolioEquityPct}
+                    label="Brokerage Share (%)"
+                    value={inc.portfolioBrokeragePct}
                     onChange={(v) =>
-                      upd("portfolioEquityPct", Math.max(0, Math.min(100, v)))
+                      upd("portfolioBrokeragePct", Math.max(0, Math.min(100, v)))
                     }
                     suffix="%"
-                    note={`Fixed income auto-fills the remaining ${Math.max(0, 100 - (inc.portfolioEquityPct || 0))}%`}
+                    note={`Traditional IRA gets the remaining ${Math.max(0, 100 - (inc.portfolioBrokeragePct || 0))}%`}
                   />
                 </div>
                 <div className="field-row-3">
+                  <NumberInput
+                    label="Roth IRA Balance"
+                    value={inc.portfolioRothValue}
+                    onChange={(v) => upd("portfolioRothValue", v)}
+                    prefix={pfx}
+                  />
+                  <NumberInput
+                    label="Current Age"
+                    value={inc.currentAge}
+                    onChange={(v) => upd("currentAge", Math.max(0, Math.round(v)))}
+                  />
+                  <NumberInput
+                    label="SS Start Age"
+                    value={inc.ssStartAge}
+                    onChange={(v) => upd("ssStartAge", Math.max(62, Math.round(v)))}
+                  />
+                </div>
+                <div className="field-row-3">
+                  <NumberInput
+                    label="Brokerage Equity (%)"
+                    value={inc.brokerageEquityPct}
+                    onChange={(v) => upd("brokerageEquityPct", Math.max(0, Math.min(100, v)))}
+                    suffix="%"
+                  />
+                  <NumberInput
+                    label="IRA Equity (%)"
+                    value={inc.iraEquityPct}
+                    onChange={(v) => upd("iraEquityPct", Math.max(0, Math.min(100, v)))}
+                    suffix="%"
+                  />
+                  <NumberInput
+                    label="Roth Equity (%)"
+                    value={inc.rothEquityPct}
+                    onChange={(v) => upd("rothEquityPct", Math.max(0, Math.min(100, v)))}
+                    suffix="%"
+                  />
+                </div>
+                <div className="field-row-3">
+                  <NumberInput
+                    label="Social Security Monthly"
+                    value={inc.ssMonthlyBenefit}
+                    onChange={(v) => upd("ssMonthlyBenefit", v)}
+                    prefix="$"
+                  />
                   <NumberInput
                     label="Dividend Yield (%)"
                     value={inc.portfolioDividendYieldPct}
@@ -2750,6 +2954,30 @@
                     suffix="%"
                     note="Applied to fixed income sleeve"
                   />
+                </div>
+                <div className="field-row-3">
+                  <label style={{ display: "flex", gap: 8, alignItems: "center", paddingTop: 24 }}>
+                    <input
+                      type="checkbox"
+                      checked={!!inc.enableRothConversion}
+                      onChange={(e) => upd("enableRothConversion", e.target.checked)}
+                    />
+                    Enable Roth conversion fill strategy
+                  </label>
+                  <div>
+                    <div className="label">Roth Conversion Target Bracket</div>
+                    <select
+                      value={String(inc.rothConversionTargetRate || 0.22)}
+                      onChange={(e) => upd("rothConversionTargetRate", Number(e.target.value))}
+                    >
+                      {[0.1, 0.12, 0.22, 0.24, 0.32, 0.35].map((r) => (
+                        <option key={r} value={String(r)}>
+                          {Math.round(r * 100)}%
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div />
                 </div>
                 <div className="field-row-3">
                   <NumberInput
@@ -2800,28 +3028,28 @@
                 {passiveDerived && (
                   <>
                     <div className="info-box" style={{ marginBottom: 14 }}>
-                      Derived annually from a {passiveDerived.equityPct}% equity /{" "}
-                      {passiveDerived.fixedIncomePct}% fixed-income mix.
+                      Derived annually from Brokerage/IRA/Roth account splits with separate equity mixes.
                     </div>
                     <div className="metric-grid" style={{ marginBottom: 16 }}>
                       <div className="metric-card">
-                        <div className="metric-label">Equity Sleeve</div>
+                        <div className="metric-label">Brokerage</div>
                         <div className="metric-val" style={{ fontSize: 18 }}>
                           {pfx}
-                          {fmtN(passiveDerived.equityValue)}
+                          {fmtN(passiveDerived.brokerageValue)}
                         </div>
                       </div>
                       <div className="metric-card">
-                        <div className="metric-label">Fixed Income Sleeve</div>
+                        <div className="metric-label">Traditional IRA</div>
                         <div className="metric-val" style={{ fontSize: 18 }}>
                           {pfx}
-                          {fmtN(passiveDerived.fixedIncomeValue)}
+                          {fmtN(passiveDerived.iraValue)}
                         </div>
                       </div>
                       <div className="metric-card">
-                        <div className="metric-label">Expected Annual Return</div>
+                        <div className="metric-label">Roth IRA</div>
                         <div className="metric-val" style={{ fontSize: 18 }}>
-                          {pct(passiveDerived.expectedAnnualReturnPct)}
+                          {pfx}
+                          {fmtN(passiveDerived.rothValue)}
                         </div>
                       </div>
                     </div>
@@ -7447,6 +7675,7 @@
 	                      <tr style={{ color: "var(--text3)", textAlign: "left" }}>
 	                        {[
 	                          "Year",
+                            "Age",
 	                          `${compareCountryA} Combined`,
 	                          `${compareCountryB} Combined`,
 	                          "Tax Delta",
@@ -7454,8 +7683,15 @@
 	                          `${compareCountryA} Local Drag`,
 	                          `${compareCountryB} US Drag`,
 	                          `${compareCountryB} Local Drag`,
-	                          `${compareCountryA} Port. End`,
-	                          `${compareCountryB} Port. End`,
+                            "RMD",
+                            "SS Income",
+                            "Roth Conv.",
+	                          `${compareCountryA} Brokerage`,
+	                          `${compareCountryA} IRA`,
+                            `${compareCountryA} Roth`,
+	                          `${compareCountryB} Brokerage`,
+	                          `${compareCountryB} IRA`,
+                            `${compareCountryB} Roth`,
 	                          `${compareCountryA} Real End`,
 	                          `${compareCountryB} Real End`,
 	                        ].map((head) => (
@@ -7477,6 +7713,9 @@
 	                        <tr key={row.year}>
 	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)" }}>
 	                            {row.year}
+	                          </td>
+                            <td style={{ padding: "10px", borderBottom: "1px solid var(--border)" }}>
+	                            {row.countryA.age || "—"}
 	                          </td>
 	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace" }}>
 	                            {fmtU(row.countryA.combinedTaxUSD)}
@@ -7511,11 +7750,32 @@
 	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryB.expatTaxDragUSD > 0 ? "var(--text2)" : "var(--text3)" }}>
 	                            {row.countryB.expatTaxDragUSD > 0 ? fmtU(row.countryB.expatTaxDragUSD) : "—"}
 	                          </td>
+                            <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace" }}>
+	                            {row.countryA.rmdUSD > 0 ? fmtU(row.countryA.rmdUSD) : "—"}
+	                          </td>
+                            <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace" }}>
+	                            {row.countryA.ssIncomeUSD > 0 ? fmtU(row.countryA.ssIncomeUSD) : "—"}
+	                          </td>
+                            <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace" }}>
+	                            {row.countryA.rothConversionUSD > 0 ? fmtU(row.countryA.rothConversionUSD) : "—"}
+	                          </td>
 	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryA.portfolioEnd > 0 ? "var(--text)" : "var(--text3)" }}>
-	                            {row.countryA.portfolioEnd > 0 ? fmtU(row.countryA.portfolioEnd) : "—"}
+	                            {row.countryA.brokerageEnd > 0 ? fmtU(row.countryA.brokerageEnd) : "—"}
+	                          </td>
+                            <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryA.portfolioEnd > 0 ? "var(--text)" : "var(--text3)" }}>
+	                            {row.countryA.iraEnd > 0 ? fmtU(row.countryA.iraEnd) : "—"}
+	                          </td>
+                            <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryA.portfolioEnd > 0 ? "var(--text)" : "var(--text3)" }}>
+	                            {row.countryA.rothEnd > 0 ? fmtU(row.countryA.rothEnd) : "—"}
 	                          </td>
 	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryB.portfolioEnd > 0 ? "var(--text)" : "var(--text3)" }}>
-	                            {row.countryB.portfolioEnd > 0 ? fmtU(row.countryB.portfolioEnd) : "—"}
+	                            {row.countryB.brokerageEnd > 0 ? fmtU(row.countryB.brokerageEnd) : "—"}
+	                          </td>
+                            <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryB.portfolioEnd > 0 ? "var(--text)" : "var(--text3)" }}>
+	                            {row.countryB.iraEnd > 0 ? fmtU(row.countryB.iraEnd) : "—"}
+	                          </td>
+                            <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryB.portfolioEnd > 0 ? "var(--text)" : "var(--text3)" }}>
+	                            {row.countryB.rothEnd > 0 ? fmtU(row.countryB.rothEnd) : "—"}
 	                          </td>
 	                          <td style={{ padding: "10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono',monospace", color: row.countryA.realPortfolioEnd > 0 ? "var(--text2)" : "var(--text3)" }}>
 	                            {row.countryA.realPortfolioEnd > 0 ? fmtU(row.countryA.realPortfolioEnd) : "—"}
