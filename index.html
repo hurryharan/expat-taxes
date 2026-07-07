@@ -1852,6 +1852,15 @@
           passiveDerived,
           effectiveIncome,
         } = resolvePassiveIncome(income);
+
+        if (settings.includeUSRealEstate === false) {
+          effectiveIncome.usRentalGross = 0;
+          effectiveIncome.usRentalMortgageInterest = 0;
+          effectiveIncome.usRentalPropertyTax = 0;
+          effectiveIncome.usRentalDepreciation = 0;
+          effectiveIncome.usRentalOtherExpenses = 0;
+        }
+
         const {
           inrToUsd,
           myrToUsd,
@@ -2488,6 +2497,7 @@
         splitIncomeMode: "combined", // 'combined' or 'separate'
         includeExpat: true,
         includeUS: true,
+        includeUSRealEstate: true,
         usPropertyPrice: 0,
       };
 
@@ -4386,6 +4396,11 @@
                       onChange={(v) => upd("includeUS", v)}
                       label="Show US taxes"
                     />
+                    <Toggle
+                      checked={s.includeUSRealEstate !== false}
+                      onChange={(v) => upd("includeUSRealEstate", v)}
+                      label="Include US Real Estate"
+                    />
                   </div>
                   <div style={{ marginTop: 16 }}>
                     <div className="label" style={{ marginBottom: 8 }}>
@@ -4530,79 +4545,83 @@
                 </div>
               </div>
 
-              <div className="section-title">
-                US Rental — expense offsets allowed
-              </div>
-              <div className="field-row-3">
-                <NumberInput
-                  label="Gross Rental Revenue"
-                  value={inc.usRentalGross}
-                  onChange={(v) => upd("usRentalGross", v)}
-                  prefix={pfx}
-                />
-                <NumberInput
-                  label="Mortgage Interest"
-                  value={inc.usRentalMortgageInterest}
-                  onChange={(v) => upd("usRentalMortgageInterest", v)}
-                  prefix={pfx}
-                />
-                <NumberInput
-                  label="Property Taxes"
-                  value={inc.usRentalPropertyTax}
-                  onChange={(v) => upd("usRentalPropertyTax", v)}
-                  prefix={pfx}
-                />
-              </div>
-              <div className="field-row">
-                <div className="field-group">
-                  <div className="label">
-                    Depreciation (auto: property price × 80% / 27.5 yrs)
+              {settings.includeUSRealEstate !== false && (
+                <>
+                  <div className="section-title">
+                    US Rental — expense offsets allowed
                   </div>
-                  <div
-                    style={{
-                      background: "var(--bg4)",
-                      border: "1px solid var(--border)",
-                      borderRadius: "var(--radius)",
-                      padding: "8px 12px",
-                      fontSize: 14,
-                      fontFamily: "'IBM Plex Mono',monospace",
-                      color: "var(--text2)",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                    }}
-                  >
-                    <span>
-                      {pfx}
-                      {Math.round(
-                        ((settings.usPropertyPrice || 0) * 0.8) / 27.5,
-                      ).toLocaleString()}
-                    </span>
-                    <span style={{ fontSize: 11, color: "var(--text3)" }}>
-                      auto
-                    </span>
+                  <div className="field-row-3">
+                    <NumberInput
+                      label="Gross Rental Revenue"
+                      value={inc.usRentalGross}
+                      onChange={(v) => upd("usRentalGross", v)}
+                      prefix={pfx}
+                    />
+                    <NumberInput
+                      label="Mortgage Interest"
+                      value={inc.usRentalMortgageInterest}
+                      onChange={(v) => upd("usRentalMortgageInterest", v)}
+                      prefix={pfx}
+                    />
+                    <NumberInput
+                      label="Property Taxes"
+                      value={inc.usRentalPropertyTax}
+                      onChange={(v) => upd("usRentalPropertyTax", v)}
+                      prefix={pfx}
+                    />
                   </div>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: "var(--text3)",
-                      marginTop: 3,
-                    }}
-                  >
-                    Property Price ({pfx}
-                    {(settings.usPropertyPrice || 0).toLocaleString()}) × 80% ÷
-                    27.5 years — set in Setup
+                  <div className="field-row">
+                    <div className="field-group">
+                      <div className="label">
+                        Depreciation (auto: property price × 80% / 27.5 yrs)
+                      </div>
+                      <div
+                        style={{
+                          background: "var(--bg4)",
+                          border: "1px solid var(--border)",
+                          borderRadius: "var(--radius)",
+                          padding: "8px 12px",
+                          fontSize: 14,
+                          fontFamily: "'IBM Plex Mono',monospace",
+                          color: "var(--text2)",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                        }}
+                      >
+                        <span>
+                          {pfx}
+                          {Math.round(
+                            ((settings.usPropertyPrice || 0) * 0.8) / 27.5,
+                          ).toLocaleString()}
+                        </span>
+                        <span style={{ fontSize: 11, color: "var(--text3)" }}>
+                          auto
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "var(--text3)",
+                          marginTop: 3,
+                        }}
+                      >
+                        Property Price ({pfx}
+                        {(settings.usPropertyPrice || 0).toLocaleString()}) × 80% ÷
+                        27.5 years — set in Setup
+                      </div>
+                    </div>
+                    <NumberInput
+                      label="Other Expenses"
+                      value={inc.usRentalOtherExpenses}
+                      onChange={(v) => upd("usRentalOtherExpenses", v)}
+                      prefix={pfx}
+                    />
                   </div>
-                </div>
-                <NumberInput
-                  label="Other Expenses"
-                  value={inc.usRentalOtherExpenses}
-                  onChange={(v) => upd("usRentalOtherExpenses", v)}
-                  prefix={pfx}
-                />
-              </div>
 
-              <hr className="section-sep" />
+                  <hr className="section-sep" />
+                </>
+              )}
               <div className="section-title">
                 {settings.expatCountry} Rental — limited deductions only
               </div>
