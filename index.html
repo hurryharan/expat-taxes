@@ -3055,14 +3055,13 @@
                   />
                 </div>
                 <div className="field-row-3">
-                  <label style={{ display: "flex", gap: 8, alignItems: "center", paddingTop: 24 }}>
-                    <input
-                      type="checkbox"
+                  <div style={{ paddingTop: 24 }}>
+                    <Toggle
                       checked={!!inc.enableRothConversion}
-                      onChange={(e) => upd("enableRothConversion", e.target.checked)}
+                      onChange={(v) => upd("enableRothConversion", v)}
+                      label="Enable Roth conversion fill strategy"
                     />
-                    Enable Roth conversion fill strategy
-                  </label>
+                  </div>
                   <div>
                     <div className="label">Roth Conversion Target Bracket</div>
                     <select
@@ -4396,11 +4395,6 @@
                       onChange={(v) => upd("includeUS", v)}
                       label="Show US taxes"
                     />
-                    <Toggle
-                      checked={s.includeUSRealEstate !== false}
-                      onChange={(v) => upd("includeUSRealEstate", v)}
-                      label="Include US Real Estate"
-                    />
                   </div>
                   <div style={{ marginTop: 16 }}>
                     <div className="label" style={{ marginBottom: 8 }}>
@@ -4490,6 +4484,7 @@
         income,
         onChange,
         settings,
+        onChangeSettings,
         passiveIncomeMode,
         passiveDerived,
       }) {
@@ -4534,8 +4529,15 @@
 
             <div className="section-card">
               <div style={{ marginBottom: 14 }}>
-                <div className="country-title" style={{ fontSize: 15 }}>
-                  Rental Property
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div className="country-title" style={{ fontSize: 15 }}>
+                    Rental Property
+                  </div>
+                  <Toggle
+                    checked={settings.includeUSRealEstate !== false}
+                    onChange={(v) => onChangeSettings((prev) => ({ ...prev, includeUSRealEstate: v }))}
+                    label="Include US Real Estate"
+                  />
                 </div>
                 <div
                   style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}
@@ -4736,6 +4738,7 @@
         pfx,
         hasQBI,
         settings,
+        onChangeSettings,
         income,
         onChange,
         passiveIncomeMode,
@@ -4785,9 +4788,18 @@
                 />
 
                 <hr className="section-sep" />
-                <div className="section-title">
-                  US Rental Property (expense offsets allowed)
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <div className="section-title" style={{ margin: 0 }}>
+                    US Rental Property (expense offsets allowed)
+                  </div>
+                  <Toggle
+                    checked={settings.includeUSRealEstate !== false}
+                    onChange={(v) => onChangeSettings((prev) => ({ ...prev, includeUSRealEstate: v }))}
+                    label="Include US Real Estate"
+                  />
                 </div>
+                {settings.includeUSRealEstate !== false && (
+                <>
                 <div className="field-row-3">
                   <NumberInput
                     label="Gross Rental Revenue"
@@ -4860,6 +4872,8 @@
                   Net = Gross − Mortgage Interest − Property Tax − Depreciation
                   (auto) − Other Expenses. Floored at $0.
                 </div>
+                </>
+                )}
               </div>
             )}
 
@@ -4989,6 +5003,7 @@
         income,
         onChange,
         settings,
+        onChangeSettings,
         onToggleMode,
         onChangeCurrency,
       }) {
@@ -5169,6 +5184,7 @@
                   income={income}
                   onChange={updIncome}
                   settings={settings}
+                  onChangeSettings={onChangeSettings}
                   passiveIncomeMode={passiveIncomeMode}
                   passiveDerived={passiveDerived}
                 />
@@ -5188,6 +5204,7 @@
                   pfx={pfx}
                   hasQBI={hasQBI}
                   settings={settings}
+                  onChangeSettings={onChangeSettings}
                   income={income}
                   onChange={updIncome}
                   passiveIncomeMode={passiveIncomeMode}
@@ -9243,6 +9260,7 @@
                 income={income}
                 onChange={setIncome}
                 settings={settings}
+                onChangeSettings={setSettings}
                 onToggleMode={handleToggleMode}
                 onChangeCurrency={(c) =>
                   setSettings((prev) => ({ ...prev, currency: c }))
