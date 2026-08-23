@@ -6681,24 +6681,30 @@
               </div>
               <div className="metric-card">
                 <div className="metric-label">MAGI</div>
-                <div className="metric-val">
-                  {fmt(r.magi, "USD")}
-                </div>
+                <div className="metric-val">{fmt(r.magi, "USD")}</div>
                 <div className="metric-sub">For NIIT threshold</div>
               </div>
               <div className="metric-card">
                 <div className="metric-label">Tax Before FTC</div>
                 <div className="metric-val">{fmt(r.grossTax, "USD")}</div>
-                <div className="metric-sub">
-                  {r.agi > 0 ? pct((r.grossTax / r.agi) * 100) : "—"} eff. rate
-                </div>
               </div>
               <div className="metric-card">
                 <div className="metric-label">Effective Rate</div>
-                <div className="metric-val" style={{ color: "var(--green)" }}>
-                  {pct(r.effectiveRate)}
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 11, color: "var(--text3)" }}>Pre-FTC</span>
+                    <span style={{ fontWeight: 600, fontSize: 15 }}>
+                      {r.agi > 0 ? pct((r.grossTax / r.agi) * 100) : "—"}
+                    </span>
+                  </div>
+                  <div style={{ height: 1, background: "var(--border)" }} />
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 11, color: "var(--green)" }}>Post-FTC</span>
+                    <span style={{ fontWeight: 700, fontSize: 15, color: "var(--green)" }}>
+                      {pct(r.effectiveRate)}
+                    </span>
+                  </div>
                 </div>
-                <div className="metric-sub">After FTC applied</div>
               </div>
               <div className="metric-card">
                 <div className="metric-label">Net US Tax Owed</div>
