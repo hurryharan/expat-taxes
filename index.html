@@ -6672,7 +6672,7 @@
               </span>
             </div>
 
-            <div className="metric-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+            <div className="metric-grid" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
               <div className="metric-card">
                 <div className="metric-label">Gross Income (AGI)</div>
                 <div className="metric-val">
@@ -6684,19 +6684,28 @@
                 <div className="metric-val">
                   {fmt(r.magi, "USD")}
                 </div>
+                <div className="metric-sub">For NIIT threshold</div>
               </div>
               <div className="metric-card">
                 <div className="metric-label">Tax Before FTC</div>
                 <div className="metric-val">{fmt(r.grossTax, "USD")}</div>
+                <div className="metric-sub">
+                  {r.agi > 0 ? pct((r.grossTax / r.agi) * 100) : "—"} eff. rate
+                </div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-label">Effective Rate</div>
+                <div className="metric-val" style={{ color: "var(--green)" }}>
+                  {pct(r.effectiveRate)}
+                </div>
+                <div className="metric-sub">After FTC applied</div>
               </div>
               <div className="metric-card">
                 <div className="metric-label">Net US Tax Owed</div>
                 <div className="metric-val negative">
                   {fmt(r.netUSTax, "USD")}
                 </div>
-                <div className="metric-sub">
-                  After FTC: {pct(r.effectiveRate)} eff. rate
-                </div>
+                <div className="metric-sub">After FTC</div>
               </div>
             </div>
 
