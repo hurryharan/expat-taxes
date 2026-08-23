@@ -5289,6 +5289,14 @@
               type: "slab",
               badge: "ord",
             });
+          if (taxesGlobalInvestment && (incomeINR.optionsPremium || 0) > 0)
+            incomeRows.push({
+              label: "Options Premium",
+              amount: incomeINR.optionsPremium,
+              cat: "Slab rates (Business Income)",
+              type: "slab",
+              badge: "ord",
+            });
           if (taxesGlobalInvestment && (incomeINR.interest || 0) > 0)
             incomeRows.push({
               label: "Interest Income",
@@ -9451,6 +9459,10 @@
                       dividends:
                         expatCountry === "India"
                           ? toLocal(effectiveIncome.ordinaryDividends || 0)
+                          : 0,
+                      optionsPremium:
+                        expatCountry === "India"
+                          ? toLocal(effectiveIncome.optionsPremium || 0)
                           : 0,
                       stcg: expatCountry === "India" ? indiaStcgINR : 0,
                       ltcgEquity:
