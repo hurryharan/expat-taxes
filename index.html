@@ -1969,7 +1969,8 @@
               toINR(effectiveIncome.interest) +
               toINR(effectiveIncome.ordinaryDividends)
           : toINR(effectiveIncome.indiaSalary) +
-            toINR(effectiveIncome.indiaOtherIncome);
+            toINR(effectiveIncome.indiaOtherIncome) +
+            (includeGlobalInvestment ? toINR(effectiveIncome.optionsPremium || 0) : 0);
 
         const indiaTotalIncomeINR =
           indiaOrdinaryIncomeINR +
@@ -1988,7 +1989,7 @@
                 ? toINR(effectiveIncome.interest || 0) / 2 +
                   toINR(effectiveIncome.ordinaryDividends || 0) / 2
                 : 0)
-          : spouseVal("indiaSalary", 1) + spouseVal("indiaOtherIncome", 1);
+          : spouseVal("indiaSalary", 1) + spouseVal("indiaOtherIncome", 1) + (includeGlobalInvestment ? spouseVal("optionsPremium", 1) : 0);
         const indiaOrdS2 = isCombined
           ? malaysiaTerritorialExempt
             ? 0
@@ -2000,7 +2001,7 @@
                 ? toINR(effectiveIncome.interest || 0) / 2 +
                   toINR(effectiveIncome.ordinaryDividends || 0) / 2
                 : 0)
-          : spouseVal("indiaSalary", 2) + spouseVal("indiaOtherIncome", 2);
+          : spouseVal("indiaSalary", 2) + spouseVal("indiaOtherIncome", 2) + (includeGlobalInvestment ? spouseVal("optionsPremium", 2) : 0);
 
         const indiaRentalPerSpouse = totalIndiaRentalNetINR / 2;
         const indiaSpecialS1 = {
@@ -2919,6 +2920,13 @@
             {!isPortfolioMode ? (
               <>
                 <div className="field-row-3">
+                  <NumberInput
+                    label="Options Premium"
+                    value={inc.optionsPremium}
+                    onChange={(v) => upd("optionsPremium", v)}
+                    prefix={pfx}
+                    note="STCG in US, Biz in India"
+                  />
                   <NumberInput
                     label="Short-Term Cap Gains"
                     value={inc.shortTermGains}
@@ -4707,14 +4715,6 @@
                   pfx={pfx}
                   note={`${settings.expatCountry} rates`}
                 />
-                <SpouseField
-                  label={`Options Premium`}
-                  fieldKey="optionsPremium"
-                  income={income}
-                  onChange={onChange}
-                  pfx={pfx}
-                  note={settings.expatCountry === "India" ? "Business Income in India, STCG in US" : "STCG in US"}
-                />
               </div>
               {passiveIncomeMode === "portfolio" ? (
                 <div className="info-box">
@@ -4725,6 +4725,14 @@
                 </div>
               ) : (
                 <div className="field-row">
+                  <SpouseField
+                    label="Options Premium"
+                    fieldKey="optionsPremium"
+                    income={income}
+                    onChange={onChange}
+                    pfx={pfx}
+                    note="STCG in US, Biz in India"
+                  />
                   <SpouseField
                     label="Short-Term Cap Gains"
                     fieldKey="shortTermGains"
@@ -4797,13 +4805,6 @@
                     note={
                       hasQBI ? "Eligible for 20% QBI deduction (§199A)" : ""
                     }
-                  />
-                  <NumberInput
-                    label="Options Premium"
-                    value={inc.optionsPremium}
-                    onChange={(v) => upd("optionsPremium", v)}
-                    prefix={pfx}
-                    note={settings.expatCountry === "India" ? "Business Income in India, STCG in US" : "STCG in US"}
                   />
                 </div>
 
