@@ -1494,6 +1494,7 @@
 
         const deductions = stdDed + personalEx;
         const agi = totalGrossIncome; // simplified (no above-line deductions)
+        const magi = agi + feieExclusion; // MAGI for NIIT adds back FEIE
         const taxableOrdinaryPreQBI = Math.max(0, ordinaryIncome - deductions);
 
         // Ordinary bracket tax
@@ -1503,9 +1504,10 @@
         const niitThresh = isMFJ
           ? td.niitThreshold.mfj
           : td.niitThreshold.single;
+        const netInvestmentIncome = ordinaryDividends + longTermGains + shortTermGains + (optionsPremium || 0) + interest + rentalNet;
         const niitIncome = Math.max(
           0,
-          Math.min(prefIncome + rentalNet, agi - niitThresh),
+          Math.min(netInvestmentIncome, magi - niitThresh),
         );
         const niitTax = niitIncome * td.niit;
 
@@ -1562,6 +1564,7 @@
           feieExcludedBusiness,
           feieStackingIncome: feieExclusion,
           agi,
+          magi,
           totalGrossIncome,
           deductions,
           taxableOrdinary,
@@ -3774,6 +3777,8 @@
             "LTCG / QDI Tax",
             `${fmt(usResult.ltcgTax, "USD")} | effective ${pct((usResult.ltcgEffectiveRate || 0) * 100)} | marginal up to ${pct(usResult.ltcgRate * 100)}`,
           );
+          addLine("AGI", fmt(usResult.agi, "USD"));
+          addLine("MAGI", fmt(usResult.magi, "USD"));
           addLine("NIIT Income", fmt(usResult.niitIncome, "USD"));
           addLine("NIIT Tax", fmt(usResult.niitTax, "USD"));
           addLine("QBI Deduction", fmt(usResult.qbiDeduction, "USD"));
@@ -6667,11 +6672,17 @@
               </span>
             </div>
 
-            <div className="metric-grid">
+            <div className="metric-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
               <div className="metric-card">
-                <div className="metric-label">Gross Income</div>
+                <div className="metric-label">Gross Income (AGI)</div>
                 <div className="metric-val">
-                  {fmt(r.totalGrossIncome, "USD")}
+                  {fmt(r.agi, "USD")}
+                </div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-label">MAGI</div>
+                <div className="metric-val">
+                  {fmt(r.magi, "USD")}
                 </div>
               </div>
               <div className="metric-card">
