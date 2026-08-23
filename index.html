@@ -1447,6 +1447,7 @@
         sec199aDividends,
         longTermGains,
         shortTermGains,
+        optionsPremium,
         filingStatus,
         year,
         indiaTaxPaid,
@@ -1485,7 +1486,8 @@
           rentalNet +
           interest +
           (ordinaryDividends - qualifiedDividends) +
-          shortTermGains;
+          shortTermGains +
+          (optionsPremium || 0);
         // Qualified/LTCG income
         const prefIncome = qualifiedDividends + longTermGains;
         const totalGrossIncome = ordinaryIncome + prefIncome;
@@ -1962,6 +1964,7 @@
             ? 0
             : toINR(effectiveIncome.wages) +
               toINR(effectiveIncome.businessIncome) +
+              toINR(effectiveIncome.optionsPremium || 0) +
               toINR(effectiveIncome.iraDistribution || 0) +
               toINR(effectiveIncome.interest) +
               toINR(effectiveIncome.ordinaryDividends)
@@ -1979,6 +1982,7 @@
             ? 0
             : spouseVal("wages", 1) +
               spouseVal("businessIncome", 1) +
+              spouseVal("optionsPremium", 1) +
               toINR(effectiveIncome.iraDistribution || 0) / 2 +
               (includeGlobalInvestment
                 ? toINR(effectiveIncome.interest || 0) / 2 +
@@ -1990,6 +1994,7 @@
             ? 0
             : spouseVal("wages", 2) +
               spouseVal("businessIncome", 2) +
+              spouseVal("optionsPremium", 2) +
               toINR(effectiveIncome.iraDistribution || 0) / 2 +
               (includeGlobalInvestment
                 ? toINR(effectiveIncome.interest || 0) / 2 +
@@ -2133,6 +2138,7 @@
             toUSD(effectiveIncome.iraDistribution || 0) +
             toUSD(effectiveIncome.ssTaxableIncome || 0),
           businessIncome: toUSD(effectiveIncome.businessIncome),
+          optionsPremium: toUSD(effectiveIncome.optionsPremium || 0),
           rentalNet: usRentalNet,
           rentalMortgageInterest: toUSD(effectiveIncome.usRentalMortgageInterest),
           rentalPropertyTax: toUSD(effectiveIncome.usRentalPropertyTax),
@@ -2228,6 +2234,7 @@
               earnedIncomeGrowthPct,
               i,
             ),
+            optionsPremium: growByRate(income.optionsPremium || 0, inflationPct, i),
             indiaSalary: growByRate(income.indiaSalary, earnedIncomeGrowthPct, i),
             indiaOtherIncome: growByRate(
               income.indiaOtherIncome,
@@ -2448,6 +2455,7 @@
         const baseMoneyFields = new Set([
           "wages",
           "businessIncome",
+          "optionsPremium",
           "shortTermGains",
           "longTermGains",
           "interest",
@@ -2533,6 +2541,7 @@
         // US income
         wages: 0,
         businessIncome: 0,
+        optionsPremium: 0,
         shortTermGains: 0,
         longTermGains: 0,
         interest: 0,
@@ -3613,6 +3622,10 @@
           fmtInput(effectiveIncome.businessIncome, settings.currency),
         );
         addLine(
+          "Options Premium",
+          fmtInput(effectiveIncome.optionsPremium, settings.currency),
+        );
+        addLine(
           "Short-Term Cap Gains",
           fmtInput(effectiveIncome.shortTermGains, settings.currency),
         );
@@ -3718,6 +3731,7 @@
         addSection("US CALCULATION INPUTS");
         addLine("Wages", fmtInput(usIncome.wages, "USD"));
         addLine("Business Income", fmtInput(usIncome.businessIncome, "USD"));
+        addLine("Options Premium", fmtInput(usIncome.optionsPremium, "USD"));
         addLine("Rental Net", fmtInput(usIncome.rentalNet, "USD"));
         addLine("Interest", fmtInput(usIncome.interest, "USD"));
         addLine("Ordinary Dividends", fmtInput(usIncome.ordinaryDividends, "USD"));
@@ -3796,6 +3810,7 @@
             const excludedMalaysiaRows = [
               ["US Salary / Wages", effectiveIncome.wages],
               ["US Business Income", effectiveIncome.businessIncome],
+              ["US Options Premium", effectiveIncome.optionsPremium],
               ["US Interest Income", effectiveIncome.interest],
               ["US Dividends", effectiveIncome.ordinaryDividends],
               ["US Short-Term Cap Gains", effectiveIncome.shortTermGains],
@@ -4692,6 +4707,14 @@
                   pfx={pfx}
                   note={`${settings.expatCountry} rates`}
                 />
+                <SpouseField
+                  label={`Options Premium`}
+                  fieldKey="optionsPremium"
+                  income={income}
+                  onChange={onChange}
+                  pfx={pfx}
+                  note={settings.expatCountry === "India" ? "Business Income in India, STCG in US" : "STCG in US"}
+                />
               </div>
               {passiveIncomeMode === "portfolio" ? (
                 <div className="info-box">
@@ -4774,6 +4797,13 @@
                     note={
                       hasQBI ? "Eligible for 20% QBI deduction (§199A)" : ""
                     }
+                  />
+                  <NumberInput
+                    label="Options Premium"
+                    value={inc.optionsPremium}
+                    onChange={(v) => upd("optionsPremium", v)}
+                    prefix={pfx}
+                    note={settings.expatCountry === "India" ? "Business Income in India, STCG in US" : "STCG in US"}
                   />
                 </div>
 
@@ -6586,6 +6616,13 @@
               amount: ui.sec199aDividends,
               cat: "Ordinary + 20% QBI deduction",
               type: "qbi",
+            });
+          if (ui.optionsPremium > 0)
+            incomeRows.push({
+              label: "Options Premium",
+              amount: ui.optionsPremium,
+              cat: "Ordinary income",
+              type: "ord",
             });
           if (ui.shortTermGains > 0)
             incomeRows.push({
