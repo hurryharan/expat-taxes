@@ -9398,6 +9398,24 @@
         );
       }
 
+      function scaleIncome(inc, factor) {
+        if (!inc || factor === 1) return inc;
+        return {
+          ...inc,
+          wages: Math.round((inc.wages || 0) * factor),
+          spouse2Wages: Math.round((inc.spouse2Wages || 0) * factor),
+          businessIncome: Math.round((inc.businessIncome || 0) * factor),
+          spouse2BusinessIncome: Math.round((inc.spouse2BusinessIncome || 0) * factor),
+          ordinaryDividends: Math.round((inc.ordinaryDividends || 0) * factor),
+          qualifiedDividends: Math.round((inc.qualifiedDividends || 0) * factor),
+          longTermGains: Math.round((inc.longTermGains || 0) * factor),
+          shortTermGains: Math.round((inc.shortTermGains || 0) * factor),
+          interest: Math.round((inc.interest || 0) * factor),
+          indiaSalary: Math.round((inc.indiaSalary || 0) * factor),
+          indiaSpouse2Salary: Math.round((inc.indiaSpouse2Salary || 0) * factor),
+        };
+      }
+
       // ============================================================
       // EXPENSES PANEL
       // ============================================================
@@ -9414,6 +9432,7 @@
         const [showAddCountry, setShowAddCountry] = React.useState(false);
         const [newCountryName, setNewCountryName] = React.useState("");
         const [newCountryExpenses, setNewCountryExpenses] = React.useState({ ...DEFAULT_COUNTRY_EXPENSES.India });
+        const [customIncomeTest, setCustomIncomeTest] = React.useState("");
 
         // Per-child expense scaling (school + healthcare; user can override)
         const numKids = (settings.children || []).length;
@@ -9954,6 +9973,244 @@
                 </div>
               )}
             </div>
+
+            {/* ── Income Sensitivity Section ── */}
+            {(() => {
+              const tiers = [
+                { key: "lower",  label: "-25% Lower Income", factor: 0.75, color: "var(--red)", strokeDash: "4,4" },
+                { key: "base",   label: "Current Income (Baseline)", factor: 1.0,  color: "var(--blue)", strokeDash: "none", isBase: true },
+                { key: "higher", label: "+25% Higher Income", factor: 1.25, color: "var(--green)", strokeDash: "6,3" },
+                { key: "growth", label: "+50% High Growth",   factor: 1.50, color: "var(--purple)", strokeDash: "8,3,2,3" },
+              ];
+
+              const parsedCustom = parseAmount(customIncomeTest);
+              if (parsedCustom > 0 && incomeUSD > 0) {
+                const cf = parsedCustom / incomeUSD;
+                tiers.push({
+                  key: "custom",
+                  label: `Custom ($${Math.round(parsedCustom).toLocaleString()})`,
+                  factor: cf,
+                  color: "var(--gold)",
+                  strokeDash: "2,2",
+                  isCustom: true,
+                });
+              }
+
+              const processedTiers = tiers.map(t => {
+                const scaledInc = scaleIncome(income, t.factor);
+                let scA, scB;
+                try { scA = computeScenario({ settings: { ...settings, expatCountry: countryA }, income: scaledInc }); }
+                catch(e) { scA = { combinedIncomeUSD: 0, combinedTaxUSD: 0 }; }
+                try { scB = computeScenario({ settings: { ...settings, expatCountry: countryB }, income: scaledInc }); }
+                catch(e) { scB = { combinedIncomeUSD: 0, combinedTaxUSD: 0 }; }
+
+                const incVal = scA.combinedIncomeUSD || 0;
+                const tA = scA.combinedTaxUSD || 0;
+                const tB = scB.combinedTaxUSD || 0;
+                const afterA = Math.max(0, incVal - tA);
+                const afterB = Math.max(0, incVal - tB);
+                const surpA = afterA - expensesA;
+                const surpB = afterB - expensesB;
+                const adv = surpB - surpA;
+                const bk = adv > 0 ? moveCost / adv : Infinity;
+
+                const series = [{ year: 0, netAdvCum: -moveCost }];
+                let cA = 0, cB = -moveCost;
+                for (let y = 1; y <= horizonYears; y++) {
+                  cA = cA * (1 + investReturn) + surpA;
+                  cB = cB * (1 + investReturn) + surpB;
+                  series.push({ year: y, netAdvCum: cB - cA });
+                }
+
+                return {
+                  ...t,
+                  incVal,
+                  taxA: tA,
+                  taxB: tB,
+                  surplusA: surpA,
+                  surplusB: surpB,
+                  annualAdvantage: adv,
+                  breakevenYears: bk,
+                  series,
+                };
+              });
+
+              const svgW = 760, svgH = 270;
+              const pL = 76, pR = 16, pT = 22, pB = 46;
+              const cw = svgW - pL - pR, ch = svgH - pT - pB;
+
+              const allNetVals = processedTiers.flatMap(t => t.series.map(d => d.netAdvCum));
+              const minV = Math.min(-moveCost * 1.05, ...allNetVals);
+              const maxV = Math.max(moveCost * 0.5, ...allNetVals);
+              const vRange = maxV - minV || 1;
+
+              const xOf = yr => pL + (yr / horizonYears) * cw;
+              const yOf = v => pT + ch - ((v - minV) / vRange) * ch;
+              const y0line = yOf(0);
+
+              const ticks = 5;
+              const tickVals = Array.from({ length: ticks + 1 }, (_, i) => minV + (i / ticks) * vRange);
+              const xStep = horizonYears <= 5 ? 1 : horizonYears <= 10 ? 2 : horizonYears <= 15 ? 3 : 5;
+              const xTicks = [];
+              for (let y = 0; y <= horizonYears; y += xStep) xTicks.push(y);
+
+              function fmtAxis(v) {
+                const av = Math.abs(v);
+                const s = v < 0 ? "-" : "";
+                if (av >= 1000000) return s + "$" + (av / 1000000).toFixed(1) + "M";
+                if (av >= 1000) return s + "$" + (av / 1000).toFixed(0) + "K";
+                return s + "$" + Math.round(av);
+              }
+
+              return (
+                <div className="section-card" style={{ marginBottom: 24 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
+                    <div>
+                      <div style={{ fontSize: 16, fontWeight: 600 }}>Income Sensitivity — Multi-Curve Breakeven</div>
+                      <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 4, lineHeight: 1.6 }}>
+                        Compare how the breakeven horizon shifts at lower (-25%), baseline, and higher (+25%, +50%) gross income levels.
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 12, color: "var(--text3)" }}>Test Custom Income:</span>
+                      <ExpenseInput
+                        value={customIncomeTest}
+                        placeholder={`e.g. $${Math.round(incomeUSD * 1.2).toLocaleString()}`}
+                        style={{ width: 130, padding: "5px 8px", fontSize: 12, fontFamily: "'IBM Plex Mono',monospace" }}
+                        onChange={v => setCustomIncomeTest(v ? String(v) : "")}
+                      />
+                      {customIncomeTest && (
+                        <button className="ghost-btn" style={{ padding: "4px 8px", fontSize: 11 }} onClick={() => setCustomIncomeTest("")}>✕ Clear</button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Multi-Curve SVG */}
+                  <div style={{ background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 10, padding: "16px 8px 10px", marginBottom: 16 }}>
+                    <svg viewBox={`0 0 ${svgW} ${svgH}`} width="100%" style={{ display: "block" }}>
+                      {/* Grid lines */}
+                      {tickVals.map((v, i) => {
+                        const y = yOf(v);
+                        return (
+                          <g key={i}>
+                            <line x1={pL} y1={y} x2={pL + cw} y2={y} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="4,4" />
+                            <text x={pL - 5} y={y + 4} textAnchor="end" fontSize="9" fill="var(--text3)">{fmtAxis(v)}</text>
+                          </g>
+                        );
+                      })}
+
+                      {/* Zero Breakeven Threshold Line */}
+                      <line x1={pL} y1={y0line} x2={pL + cw} y2={y0line} stroke="var(--orange)" strokeWidth="1.5" strokeDasharray="6,4" />
+                      <text x={pL + cw - 4} y={y0line - 5} textAnchor="end" fontSize="9" fill="var(--orange)" fontWeight="600">
+                        Breakeven Threshold ($0 Net Advantage)
+                      </text>
+
+                      {/* X-axis labels */}
+                      {xTicks.map(yr => (
+                        <text key={yr} x={xOf(yr)} y={pT + ch + 14} textAnchor="middle" fontSize="9" fill="var(--text3)">Yr {yr}</text>
+                      ))}
+
+                      {/* Income Curves */}
+                      {processedTiers.map(t => {
+                        const pts = t.series.map(d => `${xOf(d.year).toFixed(1)},${yOf(d.netAdvCum).toFixed(1)}`).join(" ");
+                        const lastPt = t.series[t.series.length - 1];
+                        return (
+                          <g key={t.key}>
+                            <polyline points={pts} fill="none" stroke={t.color} strokeWidth={t.isBase ? "3" : "2"}
+                              strokeDasharray={t.strokeDash} strokeLinejoin="round" strokeLinecap="round" />
+                            <circle cx={xOf(lastPt.year)} cy={yOf(lastPt.netAdvCum)} r={t.isBase ? "5" : "3.5"}
+                              fill={t.color} stroke="var(--bg2)" strokeWidth="1.5" />
+                          </g>
+                        );
+                      })}
+
+                      {/* Vertical Breakeven Markers */}
+                      {processedTiers.map(t => {
+                        if (t.breakevenYears > 0 && t.breakevenYears <= horizonYears) {
+                          const bx = xOf(t.breakevenYears);
+                          return (
+                            <g key={"bk-" + t.key}>
+                              <line x1={bx} y1={pT} x2={bx} y2={pT + ch} stroke={t.color} strokeWidth="1" strokeDasharray="3,3" opacity="0.7" />
+                              <circle cx={bx} cy={y0line} r="3" fill={t.color} />
+                            </g>
+                          );
+                        }
+                        return null;
+                      })}
+
+                      {/* X-axis baseline */}
+                      <line x1={pL} y1={pT + ch} x2={pL + cw} y2={pT + ch} stroke="var(--border2)" strokeWidth="1" />
+                      <text x={pL + cw / 2} y={svgH - 3} textAnchor="middle" fontSize="10" fill="var(--text3)">Years after move decision</text>
+
+                      {/* Legend */}
+                      <g transform={`translate(${pL + 10}, ${pT + 6})`}>
+                        {processedTiers.map((t, idx) => {
+                          const lx = (idx % 3) * 220;
+                          const ly = Math.floor(idx / 3) * 16;
+                          const bkText = t.breakevenYears <= horizonYears ? `${t.breakevenYears.toFixed(1)} yrs` : "Never";
+                          return (
+                            <g key={t.key} transform={`translate(${lx}, ${ly})`}>
+                              <line x1={0} y1={4} x2={16} y2={4} stroke={t.color} strokeWidth={t.isBase ? "3" : "2"} strokeDasharray={t.strokeDash} />
+                              <text x={20} y={8} fontSize="9" fill="var(--text2)" fontWeight={t.isBase ? "600" : "400"}>
+                                {t.label}: <tspan fill={t.color} fontWeight="600">{bkText}</tspan>
+                              </text>
+                            </g>
+                          );
+                        })}
+                      </g>
+                    </svg>
+                  </div>
+
+                  {/* Sensitivity Comparison Table */}
+                  <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ background: "var(--bg3)" }}>
+                          <th style={{ padding: "8px 12px", textAlign: "left", fontSize: 11, color: "var(--text3)", textTransform: "uppercase" }}>Income Scenario</th>
+                          <th style={{ padding: "8px 12px", textAlign: "right", fontSize: 11, color: "var(--text3)", textTransform: "uppercase" }}>Gross Income</th>
+                          <th style={{ padding: "8px 12px", textAlign: "right", fontSize: 11, color: "var(--blue)", textTransform: "uppercase" }}>{countryA} Surplus</th>
+                          <th style={{ padding: "8px 12px", textAlign: "right", fontSize: 11, color: "var(--green)", textTransform: "uppercase" }}>{countryB} Surplus</th>
+                          <th style={{ padding: "8px 12px", textAlign: "right", fontSize: 11, color: "var(--text3)", textTransform: "uppercase" }}>Annual Advantage</th>
+                          <th style={{ padding: "8px 12px", textAlign: "right", fontSize: 11, color: "var(--orange)", textTransform: "uppercase" }}>Breakeven Point</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {processedTiers.map((t, i) => (
+                          <tr key={t.key} style={{
+                            borderTop: "1px solid var(--border)",
+                            background: t.isBase ? "rgba(74,158,255,0.08)" : i % 2 === 0 ? "transparent" : "var(--bg3)",
+                          }}>
+                            <td style={{ padding: "8px 12px", fontWeight: t.isBase ? 600 : 400, color: t.color }}>
+                              {t.label} {t.isBase ? " (Current)" : ""}
+                            </td>
+                            <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "'IBM Plex Mono',monospace" }}>
+                              {fmt(t.incVal, "USD")}
+                            </td>
+                            <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "'IBM Plex Mono',monospace", color: "var(--blue)" }}>
+                              {fmt(t.surplusA, "USD")}
+                            </td>
+                            <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "'IBM Plex Mono',monospace", color: "var(--green)" }}>
+                              {fmt(t.surplusB, "USD")}
+                            </td>
+                            <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "'IBM Plex Mono',monospace",
+                              color: t.annualAdvantage > 0 ? "var(--green)" : "var(--red)", fontWeight: 500 }}>
+                              {t.annualAdvantage > 0 ? "+" : ""}{fmt(t.annualAdvantage, "USD")}/yr
+                            </td>
+                            <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "'IBM Plex Mono',monospace",
+                              color: "var(--orange)", fontWeight: 600 }}>
+                              {t.annualAdvantage > 0 ? (t.breakevenYears < 1 ? "< 1 year" : t.breakevenYears.toFixed(1) + " years") : "Never"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 8, lineHeight: 1.6 }}>
+                    💡 <strong>Insight:</strong> Higher earned incomes amplify the tax rate differential between {countryA} and {countryB}, expanding annual net savings and accelerating breakeven.
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* ── Year-by-year table ── */}
             <div className="section-card">
