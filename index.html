@@ -9629,8 +9629,8 @@
 
             {/* ── Side-by-side expense cards ── */}
             <div className="side-by-side" style={{ marginBottom: 24 }}>
-              <CountryExpenseCard country={countryA} surplus={surplusA} />
-              <CountryExpenseCard country={countryB} surplus={surplusB} />
+              {CountryExpenseCard({ country: countryA, surplus: surplusA })}
+              {CountryExpenseCard({ country: countryB, surplus: surplusB })}
             </div>
 
             {/* ── Annual Comparison Table ── */}
@@ -9746,7 +9746,7 @@
 
               {/* SVG chart */}
               <div style={{ background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 10, padding: "16px 8px 10px" }}>
-                <BreakevenChart />
+                {BreakevenChart()}
               </div>
 
               {/* Before / after zone descriptions */}
