@@ -3651,6 +3651,7 @@
         currentTab,
         settings,
         income,
+        expenses,
         effectiveIncome,
         passiveIncomeMode,
         passiveDerived,
@@ -3676,14 +3677,18 @@
             setup: "Setup",
             income: "Income",
             results: "Taxes",
+            expenses: "Expenses",
             planning: "Planning",
           }[currentTab] || currentTab;
         const lines = [];
 
-        function addSection(title) {
+        function addSection(title, contextNote) {
           if (lines.length) lines.push("");
           lines.push(title);
           lines.push("=".repeat(title.length));
+          if (contextNote) {
+            lines.push(`Context: ${contextNote}`);
+          }
         }
 
         function addLine(label, value) {
@@ -3695,11 +3700,17 @@
           return `${fmt(n, currency)} (raw ${n})`;
         }
 
-        addSection("EXPAT TAX CALCULATOR EXPORT");
+        addSection(
+          "EXPAT TAX & COST OF LIVING CALCULATOR EXPORT",
+          "Comprehensive report covering tax calculations, family dependents, living expense comparison, breakeven horizon sensitivity, portfolio assumptions, multi-year projections, and UI state."
+        );
         addLine("Generated at", new Date().toISOString());
-        addLine("Current tab", tabLabel);
+        addLine("Current active tab", tabLabel);
 
-        addSection("SETTINGS");
+        addSection(
+          "SETTINGS & FILING PROFILE",
+          "Filing profile configuration defining tax year, residency status, exchange rates, filing status, and country selection."
+        );
         addLine("Expat country", settings.expatCountry);
         addLine("Tax year", settings.taxYear);
         addLine(
@@ -3736,7 +3747,126 @@
           fmtInput(settings.usPropertyPrice || 0, settings.currency),
         );
 
-        addSection("INCOME ENTRIES");
+        // ── Family Profile & Dependents ──────────────
+        addSection(
+          "FAMILY PROFILE & DEPENDENTS",
+          "Configured child dependents driving US Child Tax Credit eligibility (qualifying = under 17) and baseline living expense defaults."
+        );
+        const childrenList = settings.children || [];
+        addLine("Total Configured Children", childrenList.length);
+        if (childrenList.length > 0) {
+          childrenList.forEach((c, idx) => {
+            const isQual = (c.age || 0) < 17;
+            addLine(`Child ${idx + 1}`, `Age ${c.age || 0} (${isQual ? "Qualifies for US CTC <17" : "Does not qualify for CTC 17+"})`);
+          });
+          const qualCount = childrenList.filter(c => (c.age || 0) < 17).length;
+          addLine("Total Qualifying Children (<17)", qualCount);
+          addLine("Max US Child Tax Credit Potential", fmt(qualCount * 2000, "USD"));
+        } else {
+          addLine("Children Note", "No children configured (US Child Tax Credit = $0)");
+        }
+
+        // ── Cost of Living & Expenses ────────────────
+        addSection(
+          "COST OF LIVING & RELOCATION EXPENSES",
+          "Monthly living expense models comparing Origin (Country A) vs Destination (Country B), move costs, horizon, and surplus investment return."
+        );
+        const countryA = settings.expenseCountryA || "Malaysia";
+        const countryB = settings.expenseCountryB || "India";
+        const moveCost = settings.moveCost != null ? settings.moveCost : 15000;
+        const horizonYears = settings.breakEvenHorizon || 15;
+        const investReturnPct = settings.investmentReturnPct != null ? settings.investmentReturnPct : 7;
+        const investReturn = investReturnPct / 100;
+
+        addLine("Origin Country (A)", countryA);
+        addLine("Destination Country (B)", countryB);
+        addLine("Relocation Cost", fmt(moveCost, "USD"));
+        addLine("Breakeven Horizon", `${horizonYears} years`);
+        addLine("Surplus Investment Return Rate", `${investReturnPct}% per year`);
+
+        const expDataA = (expenses && expenses[countryA]) || DEFAULT_COUNTRY_EXPENSES[countryA] || {};
+        const expDataB = (expenses && expenses[countryB]) || DEFAULT_COUNTRY_EXPENSES[countryB] || {};
+
+        lines.push("");
+        lines.push("Monthly Living Expenses Breakdown (USD/mo):");
+        let moA = 0, moB = 0;
+        EXPENSE_CATEGORIES.forEach(cat => {
+          const valA = Number(expDataA[cat.key]) || 0;
+          const valB = Number(expDataB[cat.key]) || 0;
+          moA += valA;
+          moB += valB;
+          addLine(`  - ${cat.label} (${cat.icon})`, `${countryA}: ${fmt(valA, "USD")}/mo | ${countryB}: ${fmt(valB, "USD")}/mo`);
+        });
+
+        const annA = moA * 12;
+        const annB = moB * 12;
+        addLine("Total Monthly Expenses", `${countryA}: ${fmt(moA, "USD")}/mo | ${countryB}: ${fmt(moB, "USD")}/mo`);
+        addLine("Total Annual Expenses", `${countryA}: ${fmt(annA, "USD")}/yr | ${countryB}: ${fmt(annB, "USD")}/yr`);
+
+        // Compute surpluses & breakeven at baseline income
+        let scA, scB;
+        try { scA = computeScenario({ settings: { ...settings, expatCountry: countryA }, income }); }
+        catch(e) { scA = { combinedIncomeUSD: 0, combinedTaxUSD: 0 }; }
+        try { scB = computeScenario({ settings: { ...settings, expatCountry: countryB }, income }); }
+        catch(e) { scB = { combinedIncomeUSD: 0, combinedTaxUSD: 0 }; }
+
+        const baselineIncomeUSD = scA.combinedIncomeUSD || 0;
+        const taxAVal = scA.combinedTaxUSD || 0;
+        const taxBVal = scB.combinedTaxUSD || 0;
+        const afterTaxAVal = Math.max(0, baselineIncomeUSD - taxAVal);
+        const afterTaxBVal = Math.max(0, baselineIncomeUSD - taxBVal);
+        const surplusAVal = afterTaxAVal - annA;
+        const surplusBVal = afterTaxBVal - annB;
+        const annualAdvVal = surplusBVal - surplusAVal;
+        const bkVal = annualAdvVal > 0 ? moveCost / annualAdvVal : Infinity;
+
+        addLine("Gross Income (Baseline)", fmt(baselineIncomeUSD, "USD"));
+        addLine(`After-Tax Income — ${countryA}`, fmt(afterTaxAVal, "USD"));
+        addLine(`After-Tax Income — ${countryB}`, fmt(afterTaxBVal, "USD"));
+        addLine(`Annual Net Surplus — ${countryA}`, fmt(surplusAVal, "USD"));
+        addLine(`Annual Net Surplus — ${countryB}`, fmt(surplusBVal, "USD"));
+        addLine(`Annual Financial Move Advantage (${countryB} vs ${countryA})`, `${annualAdvVal > 0 ? "+" : ""}${fmt(annualAdvVal, "USD")}/yr`);
+        addLine("Move Breakeven Horizon", annualAdvVal > 0 ? `${bkVal.toFixed(1)} years` : "Never at current assumptions");
+
+        // ── Breakeven Sensitivity Across Income Tiers ──
+        addSection(
+          "BREAKEVEN SENSITIVITY ACROSS INCOME TIERS",
+          "Sensitivity analysis evaluating how after-tax surpluses and breakeven horizons shift across lower (-25%), baseline (100%), and higher (+25%, +50%) gross income levels."
+        );
+        const sensitivityTiers = [
+          { label: "-25% Lower Income", factor: 0.75 },
+          { label: "Current Income (Baseline)", factor: 1.0 },
+          { label: "+25% Higher Income", factor: 1.25 },
+          { label: "+50% High Growth", factor: 1.50 },
+        ];
+        sensitivityTiers.forEach(tier => {
+          const scaledInc = scaleIncome(income, tier.factor);
+          let sscA, sscB;
+          try { sscA = computeScenario({ settings: { ...settings, expatCountry: countryA }, income: scaledInc }); }
+          catch(e) { sscA = { combinedIncomeUSD: 0, combinedTaxUSD: 0 }; }
+          try { sscB = computeScenario({ settings: { ...settings, expatCountry: countryB }, income: scaledInc }); }
+          catch(e) { sscB = { combinedIncomeUSD: 0, combinedTaxUSD: 0 }; }
+
+          const incVal = sscA.combinedIncomeUSD || 0;
+          const tA = sscA.combinedTaxUSD || 0;
+          const tB = sscB.combinedTaxUSD || 0;
+          const afterA = Math.max(0, incVal - tA);
+          const afterB = Math.max(0, incVal - tB);
+          const surA = afterA - annA;
+          const surB = afterB - annB;
+          const adv = surB - surA;
+          const bk = adv > 0 ? moveCost / adv : Infinity;
+
+          addLine(
+            tier.label,
+            `Gross ${fmt(incVal, "USD")} | ${countryA} Surplus: ${fmt(surA, "USD")} | ${countryB} Surplus: ${fmt(surB, "USD")} | Advantage: ${adv > 0 ? "+" : ""}${fmt(adv, "USD")}/yr | Breakeven: ${adv > 0 ? bk.toFixed(1) + " yrs" : "Never"}`
+          );
+        });
+
+        addSection(
+          "INCOME ENTRIES",
+          "All gross earned, investment, rental, and self-employment income streams entered into the tax model."
+        );
         addLine("Passive income source", passiveIncomeMode === "portfolio" ? "Portfolio-derived" : "Manual");
         addLine("Wages / Salary", fmtInput(effectiveIncome.wages, settings.currency));
         addLine(
@@ -3810,7 +3940,10 @@
           fmtInput(effectiveIncome.indiaOtherIncome, settings.currency),
         );
         if (passiveIncomeMode === "portfolio" && passiveDerived) {
-          addSection("PORTFOLIO PASSIVE-INCOME ASSUMPTIONS");
+          addSection(
+            "PORTFOLIO PASSIVE-INCOME ASSUMPTIONS",
+            "Asset allocation, dividend yield, capital gain realization, and growth rate parameters used to derive passive income."
+          );
           addLine("Portfolio Value", fmtInput(income.portfolioValue, settings.currency));
           addLine("Equity Mix", `${pct(income.portfolioEquityPct || 0)}`);
           addLine("Fixed Income Mix", `${pct(Math.max(0, 100 - (income.portfolioEquityPct || 0)))}`);
@@ -3827,7 +3960,10 @@
           addLine("Derived Fixed Income Sleeve", fmt(passiveDerived.fixedIncomeValue, settings.currency));
           addLine("Derived Passive Income", fmt(passiveDerived.estimatedPassiveIncome, settings.currency));
         }
-        addSection("SIMULATION ASSUMPTIONS");
+        addSection(
+          "SIMULATION ASSUMPTIONS",
+          "Multi-year growth rates, inflation, and annual savings contributions/withdrawals."
+        );
         addLine("Projection Years", income.simulationYears || 0);
         addLine("Earned Income Growth", `${pct(income.earnedIncomeGrowthPct || 0)}`);
         addLine("Rental Growth", `${pct(income.rentalGrowthPct || 0)}`);
@@ -3835,7 +3971,10 @@
         addLine("Annual Portfolio Contribution", fmtInput(income.annualPortfolioContribution, settings.currency));
         addLine("Annual Portfolio Withdrawal", fmtInput(income.annualPortfolioWithdrawal, settings.currency));
 
-        addSection("SUMMARY");
+        addSection(
+          "SUMMARY",
+          "Overview of total tax liabilities, combined effective tax rates, and Foreign Tax Credit utilization."
+        );
         addLine("Net US Tax Owed", fmt(totalUSTax, "USD"));
         addLine(`${settings.expatCountry} Tax`, fmt(totalIndiaTax, localCur));
         addLine(`${settings.expatCountry} Tax in USD`, fmt(totalIndiaTaxUSD, "USD"));
@@ -3850,7 +3989,10 @@
           usResult ? fmt(usResult.ftcClaimed, "USD") : "N/A",
         );
 
-        addSection("US CALCULATION INPUTS");
+        addSection(
+          "US CALCULATION INPUTS",
+          "Gross income components passed into the US Form 1040 tax computation engine."
+        );
         addLine("Wages", fmtInput(usIncome.wages, "USD"));
         addLine("Business Income", fmtInput(usIncome.businessIncome, "USD"));
         addLine("Options Premium", fmtInput(usIncome.optionsPremium, "USD"));
@@ -3865,7 +4007,10 @@
         addLine("India Tax Paid Credit Input", fmtInput(usIncome.indiaTaxPaid, "USD"));
 
         if (usResult) {
-          addSection("US RESULT DETAIL");
+          addSection(
+            "US RESULT DETAIL",
+            "Step-by-step breakdown of US federal tax: FEIE exclusions, AGI/MAGI, deductions, NIIT, QBI, Foreign Tax Credit (Form 1116), and Child Tax Credit (CTC/ACTC)."
+          );
           addLine("FEIE Exclusion", fmt(usResult.feieExclusion, "USD"));
           addLine("FEIE Excluded Wages", fmt(usResult.feieExcludedWages || 0, "USD"));
           addLine(
@@ -3896,7 +4041,13 @@
           addLine("Tax Before FTC", fmt(usResult.grossTax, "USD"));
           addLine("FTC Limit", fmt(usResult.ftcLimit, "USD"));
           addLine("FTC Claimed", fmt(usResult.ftcClaimed, "USD"));
-          addLine("Net US Tax", fmt(usResult.netUSTax, "USD"));
+          if (usResult.numQualifyingChildren !== undefined) {
+            addLine("Qualifying Children (<17)", usResult.numQualifyingChildren);
+            addLine("Max Child Tax Credit Potential", fmt(usResult.maxCTC || 0, "USD"));
+            addLine("Child Tax Credit (Non-Refundable Applied)", fmt(usResult.ctcCredit || 0, "USD"));
+            addLine("Additional Child Tax Credit (Refundable ACTC)", fmt(usResult.actcCredit || 0, "USD"));
+          }
+          addLine("Net US Tax Owed / Refund", usResult.netUSTax < 0 ? `+${fmt(-usResult.netUSTax, "USD")} Refund` : fmt(usResult.netUSTax, "USD"));
           addLine("Effective Rate", pct(usResult.effectiveRate));
           addLine(
             "Marginal Ordinary Rate",
@@ -3905,7 +4056,10 @@
         }
 
         if (indiaResult) {
-          addSection(`${settings.expatCountry.toUpperCase()} CALCULATION DETAIL`);
+          addSection(
+            `${settings.expatCountry.toUpperCase()} CALCULATION DETAIL`,
+            `Tax breakdown for ${settings.expatCountry} under local tax laws, slab rates, standard deductions, cess, and surcharge rules.`
+          );
           addLine(
             `${settings.expatCountry} Total Tax`,
             fmt(indiaResult.total.totalINR, localCur),
@@ -4006,7 +4160,10 @@
         }
 
         if (projectionRows && projectionRows.length) {
-          addSection("MULTI-YEAR PROJECTION");
+          addSection(
+            "MULTI-YEAR PROJECTION",
+            "Year-by-year forecast of gross income, US tax, local tax, combined tax burden, effective rates, and net portfolio wealth accumulation."
+          );
           projectionRows.forEach((row) => {
             addLine(
               `Year ${row.year}`,
@@ -4018,7 +4175,10 @@
           });
         }
 
-        addSection("VISIBLE UI SNAPSHOT");
+        addSection(
+          "VISIBLE UI SNAPSHOT",
+          "Textual snapshot extracted directly from active UI tabs."
+        );
         lines.push(uiSnapshot || "No UI snapshot captured.");
 
         return lines.join("\n");
@@ -10371,6 +10531,7 @@
             currentTab: tab,
             settings,
             income,
+            expenses,
             effectiveIncome,
             passiveIncomeMode,
             passiveDerived,
