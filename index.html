@@ -2511,6 +2511,12 @@
         includeUS: true,
         includeUSRealEstate: true,
         usPropertyPrice: 0,
+        // Expense comparison & breakeven
+        expenseCountryA: "Malaysia",
+        expenseCountryB: "India",
+        moveCost: 15000,
+        breakEvenHorizon: 15,
+        investmentReturnPct: 7,
       };
 
       const DEFAULT_INCOME = {
@@ -2567,6 +2573,42 @@
         // India other
         indiaSalary: 0,
         indiaOtherIncome: 0,
+      };
+
+      // ============================================================
+      // EXPENSE DATA (family of 4, kids aged 9 & 13)
+      // ============================================================
+      const EXPENSE_CATEGORIES = [
+        { key: "housing",       label: "Housing / Rent",          icon: "🏠", note: "3-bedroom apartment or house in city" },
+        { key: "groceries",     label: "Groceries & Food",         icon: "🛒", note: "Supermarket & fresh market" },
+        { key: "dining",        label: "Dining Out",               icon: "🍽️", note: "Restaurants, cafes & delivery" },
+        { key: "transport",     label: "Transport",                icon: "🚗", note: "Car, fuel / Grab / rideshare / MRT" },
+        { key: "school",        label: "School — 2 Kids",          icon: "🎒", note: "Tuition, fees & extracurriculars (ages 9 & 13)" },
+        { key: "healthcare",    label: "Healthcare & Insurance",   icon: "🏥", note: "Health insurance premiums + out-of-pocket" },
+        { key: "utilities",     label: "Utilities",                icon: "💡", note: "Electric, water, internet, mobile" },
+        { key: "help",          label: "Domestic Help",            icon: "🧹", note: "Housekeeper, cook, or driver" },
+        { key: "clothing",      label: "Clothing & Personal",      icon: "👕", note: "Apparel, shoes, grooming, personal care" },
+        { key: "entertainment", label: "Entertainment & Leisure",  icon: "🎭", note: "Sports, hobbies, streaming, gym, family activities" },
+        { key: "travel",        label: "Travel",                   icon: "✈️", note: "Flights home, school holidays & vacations" },
+        { key: "misc",          label: "Miscellaneous",            icon: "📦", note: "Buffer for unplanned spend" },
+      ];
+
+      const DEFAULT_COUNTRY_EXPENSES = {
+        Malaysia: {
+          housing: 2200, groceries: 800,  dining: 500, transport: 400,
+          school: 2800,  healthcare: 500, utilities: 200, help: 150,
+          clothing: 300, entertainment: 400, travel: 500, misc: 200,
+        },
+        India: {
+          housing: 600,  groceries: 300,  dining: 200, transport: 150,
+          school: 1200,  healthcare: 150, utilities: 80,  help: 300,
+          clothing: 200, entertainment: 150, travel: 300, misc: 150,
+        },
+      };
+
+      const DEFAULT_EXPENSES = {
+        Malaysia: { ...DEFAULT_COUNTRY_EXPENSES.Malaysia },
+        India:    { ...DEFAULT_COUNTRY_EXPENSES.India },
       };
 
       // ============================================================
@@ -4484,6 +4526,62 @@
                   </div>
                   <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 8, lineHeight: 1.7 }}>
                     Used to estimate US depreciation on the rental side of the model.
+                  </div>
+                </div>
+
+                <div className="section-card">
+                  <div className="section-title">Cost of Living — Breakeven Setup</div>
+                  <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 14, lineHeight: 1.6 }}>
+                    Configure the expense comparison and move viability model. Defaults are tuned for a family of 4 with children aged 9 &amp; 13 in KL vs Bangalore.
+                  </div>
+                  <div className="field-row">
+                    <div className="field-group">
+                      <div className="label">Origin Country (Country A)</div>
+                      <select value={s.expenseCountryA || "Malaysia"} onChange={e => upd("expenseCountryA", e.target.value)}>
+                        <option value="Malaysia">Malaysia</option>
+                        <option value="India">India</option>
+                      </select>
+                      <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>Current / "stay" location</div>
+                    </div>
+                    <div className="field-group">
+                      <div className="label">Destination Country (Country B)</div>
+                      <select value={s.expenseCountryB || "India"} onChange={e => upd("expenseCountryB", e.target.value)}>
+                        <option value="India">India</option>
+                        <option value="Malaysia">Malaysia</option>
+                      </select>
+                      <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>Target / "move to" location</div>
+                    </div>
+                  </div>
+                  <div className="field-row-3">
+                    <div className="field-group">
+                      <div className="label">Relocation Cost ($)</div>
+                      <input type="number" min={0} step={500}
+                        value={s.moveCost || 15000}
+                        onChange={e => upd("moveCost", Math.max(0, Number(e.target.value)))}
+                        style={{ textAlign: "right", fontFamily: "'IBM Plex Mono',monospace" }}
+                      />
+                      <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>One-time move cost (shipping, flights, deposits)</div>
+                    </div>
+                    <div className="field-group">
+                      <div className="label">Breakeven Horizon (yrs)</div>
+                      <input type="number" min={3} max={30}
+                        value={s.breakEvenHorizon || 15}
+                        onChange={e => upd("breakEvenHorizon", Math.max(3, Math.min(30, Number(e.target.value))))}
+                        style={{ textAlign: "right", fontFamily: "'IBM Plex Mono',monospace" }}
+                      />
+                    </div>
+                    <div className="field-group">
+                      <div className="label">Investment Return (%)</div>
+                      <input type="number" min={0} max={20} step={0.5}
+                        value={s.investmentReturnPct || 7}
+                        onChange={e => upd("investmentReturnPct", Math.max(0, Math.min(20, Number(e.target.value))))}
+                        style={{ textAlign: "right", fontFamily: "'IBM Plex Mono',monospace" }}
+                      />
+                      <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>Annual return on surplus savings (compounds)</div>
+                    </div>
+                  </div>
+                  <div className="info-box">
+                    Full expense line items and the breakeven visualization are on the <strong>Expenses</strong> tab.
                   </div>
                 </div>
 
@@ -9150,6 +9248,597 @@
       }
 
       // ============================================================
+      // EXPENSES PANEL
+      // ============================================================
+      function ExpensesPanel({ settings, income, expenses, onChangeExpenses, onChangeSettings }) {
+        const countryA = settings.expenseCountryA || "Malaysia";
+        const countryB = settings.expenseCountryB || "India";
+        const moveCost = settings.moveCost != null ? settings.moveCost : 15000;
+        const horizonYears = settings.breakEvenHorizon || 15;
+        const investReturnPct = settings.investmentReturnPct != null ? settings.investmentReturnPct : 7;
+        const investReturn = investReturnPct / 100;
+
+        const knownCountries = Object.keys(expenses).length > 0 ? Object.keys(expenses) : ["Malaysia", "India"];
+
+        const [showAddCountry, setShowAddCountry] = React.useState(false);
+        const [newCountryName, setNewCountryName] = React.useState("");
+        const [newCountryExpenses, setNewCountryExpenses] = React.useState({ ...DEFAULT_COUNTRY_EXPENSES.India });
+
+        function getExpenses(country) {
+          return expenses[country] || DEFAULT_COUNTRY_EXPENSES[country] || Object.fromEntries(EXPENSE_CATEGORIES.map(c => [c.key, 0]));
+        }
+
+        function monthlyTotal(country) {
+          const e = getExpenses(country);
+          return EXPENSE_CATEGORIES.reduce((sum, cat) => sum + (Number(e[cat.key]) || 0), 0);
+        }
+
+        function annualTotal(country) { return monthlyTotal(country) * 12; }
+
+        function updateExpense(country, key, value) {
+          onChangeExpenses(prev => ({
+            ...prev,
+            [country]: { ...(prev[country] || getExpenses(country)), [key]: value },
+          }));
+        }
+
+        // Compute scenario for each country using the full tax engine
+        const scenarioA = React.useMemo(() => {
+          try { return computeScenario({ settings: { ...settings, expatCountry: countryA }, income }); }
+          catch(e) { return { combinedIncomeUSD: 0, combinedTaxUSD: 0, totalUSTax: 0, totalIndiaTaxUSD: 0 }; }
+        }, [settings, income, countryA]);
+
+        const scenarioB = React.useMemo(() => {
+          try { return computeScenario({ settings: { ...settings, expatCountry: countryB }, income }); }
+          catch(e) { return { combinedIncomeUSD: 0, combinedTaxUSD: 0, totalUSTax: 0, totalIndiaTaxUSD: 0 }; }
+        }, [settings, income, countryB]);
+
+        const incomeUSD = scenarioA.combinedIncomeUSD || 0;
+        const taxA = scenarioA.combinedTaxUSD || 0;
+        const taxB = scenarioB.combinedTaxUSD || 0;
+        const afterTaxA = Math.max(0, incomeUSD - taxA);
+        const afterTaxB = Math.max(0, incomeUSD - taxB);
+        const expensesA = annualTotal(countryA);
+        const expensesB = annualTotal(countryB);
+        const surplusA = afterTaxA - expensesA;
+        const surplusB = afterTaxB - expensesB;
+        const annualAdvantage = surplusB - surplusA;
+        const breakevenYears = annualAdvantage > 0 ? moveCost / annualAdvantage : Infinity;
+
+        // Cumulative chart data with optional compounding
+        const chartData = React.useMemo(() => {
+          const rows = [{ year: 0, stayPos: 0, movePos: -moveCost }];
+          let cumA = 0, cumMove = -moveCost;
+          for (let y = 1; y <= horizonYears; y++) {
+            cumA   = cumA   * (1 + investReturn) + surplusA;
+            cumMove = cumMove * (1 + investReturn) + surplusB;
+            rows.push({ year: y, stayPos: cumA, movePos: cumMove });
+          }
+          return rows;
+        }, [surplusA, surplusB, moveCost, horizonYears, investReturn]);
+
+        // ── SVG Breakeven Chart ───────────────────────────────────
+        function BreakevenChart() {
+          const svgW = 760, svgH = 300;
+          const pL = 76, pR = 16, pT = 22, pB = 46;
+          const cw = svgW - pL - pR, ch = svgH - pT - pB;
+
+          const allVals = chartData.flatMap(d => [d.stayPos, d.movePos]);
+          const minV = Math.min(-moveCost * 1.05, ...allVals);
+          const maxV = Math.max(1, ...allVals);
+          const vRange = maxV - minV || 1;
+
+          const xOf = yr => pL + (yr / horizonYears) * cw;
+          const yOf = v  => pT + ch - ((v - minV) / vRange) * ch;
+
+          const stayPts = chartData.map(d => `${xOf(d.year).toFixed(1)},${yOf(d.stayPos).toFixed(1)}`).join(" ");
+          const movePts = chartData.map(d => `${xOf(d.year).toFixed(1)},${yOf(d.movePos).toFixed(1)}`).join(" ");
+
+          const y0line = yOf(0);
+
+          // Breakeven x (where movePos crosses 0)
+          let bkX = null;
+          for (let i = 1; i < chartData.length; i++) {
+            if (chartData[i - 1].movePos < 0 && chartData[i].movePos >= 0) {
+              const frac = -chartData[i - 1].movePos / (chartData[i].movePos - chartData[i - 1].movePos);
+              bkX = xOf(i - 1 + frac);
+              break;
+            }
+          }
+
+          // Crossover x (where movePos > stayPos)
+          let crossX = null;
+          for (let i = 1; i < chartData.length; i++) {
+            const prevDiff = chartData[i-1].movePos - chartData[i-1].stayPos;
+            const currDiff = chartData[i].movePos - chartData[i].stayPos;
+            if (prevDiff < 0 && currDiff >= 0) {
+              const frac = -prevDiff / (currDiff - prevDiff);
+              crossX = xOf(i - 1 + frac);
+              break;
+            }
+          }
+
+          const effectiveBkX = crossX || bkX;
+
+          // Y-axis tick values
+          const ticks = 6;
+          const tickVals = Array.from({ length: ticks + 1 }, (_, i) => minV + (i / ticks) * vRange);
+          const xStep = horizonYears <= 5 ? 1 : horizonYears <= 10 ? 2 : horizonYears <= 15 ? 3 : 5;
+          const xTicks = [];
+          for (let y = 0; y <= horizonYears; y += xStep) xTicks.push(y);
+
+          function fmtAxis(v) {
+            const av = Math.abs(v);
+            const s = v < 0 ? "-" : "";
+            if (av >= 1000000) return s + "$" + (av / 1000000).toFixed(1) + "M";
+            if (av >= 1000) return s + "$" + (av / 1000).toFixed(0) + "K";
+            return s + "$" + Math.round(av);
+          }
+
+          return (
+            <svg viewBox={`0 0 ${svgW} ${svgH}`} width="100%" style={{ display: "block" }}>
+              {/* Background shading */}
+              {effectiveBkX != null && (
+                <>
+                  <rect x={pL} y={pT} width={effectiveBkX - pL} height={ch} fill="rgba(240,96,96,0.055)" />
+                  <rect x={effectiveBkX} y={pT} width={pL + cw - effectiveBkX} height={ch} fill="rgba(62,207,142,0.06)" />
+                </>
+              )}
+              {/* Grid lines + Y labels */}
+              {tickVals.map((v, i) => {
+                const y = yOf(v);
+                return (
+                  <g key={i}>
+                    <line x1={pL} y1={y} x2={pL + cw} y2={y} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="4,4" />
+                    <text x={pL - 5} y={y + 4} textAnchor="end" fontSize="9" fill="var(--text3)">{fmtAxis(v)}</text>
+                  </g>
+                );
+              })}
+              {/* Zero line (heavier) */}
+              <line x1={pL} y1={y0line} x2={pL + cw} y2={y0line} stroke="var(--border2)" strokeWidth="1.5" />
+              {/* X-axis labels */}
+              {xTicks.map(yr => (
+                <text key={yr} x={xOf(yr)} y={pT + ch + 14} textAnchor="middle" fontSize="9" fill="var(--text3)">Yr {yr}</text>
+              ))}
+              {/* Breakeven / crossover line */}
+              {effectiveBkX != null && (
+                <>
+                  <line x1={effectiveBkX} y1={pT} x2={effectiveBkX} y2={pT + ch}
+                    stroke="var(--orange)" strokeWidth="1.5" strokeDasharray="7,4" />
+                  <text x={effectiveBkX + 5} y={pT + 14} fontSize="9" fill="var(--orange)" fontWeight="600">
+                    {crossX ? "Crossover" : "Break-even"} {annualAdvantage > 0 && breakevenYears <= horizonYears ? "Yr " + breakevenYears.toFixed(1) : ""}
+                  </text>
+                </>
+              )}
+              {/* Area fills under lines */}
+              <polyline
+                points={[`${xOf(0).toFixed(1)},${yOf(0).toFixed(1)}`, ...chartData.slice(1).map(d => `${xOf(d.year).toFixed(1)},${yOf(d.stayPos).toFixed(1)}`), `${xOf(horizonYears).toFixed(1)},${yOf(0).toFixed(1)}`].join(" ")}
+                fill="rgba(74,158,255,0.06)" stroke="none" />
+              {/* Stay line */}
+              <polyline points={stayPts} fill="none" stroke="var(--blue)" strokeWidth="2.5"
+                strokeLinejoin="round" strokeLinecap="round" />
+              {/* Move line */}
+              <polyline points={movePts} fill="none" stroke="var(--green)" strokeWidth="2.5"
+                strokeLinejoin="round" strokeLinecap="round" />
+              {/* Last-year dots */}
+              {[{ d: chartData[chartData.length - 1], get: d => d.stayPos, color: "var(--blue)" },
+                { d: chartData[chartData.length - 1], get: d => d.movePos, color: "var(--green)" }].map((item, i) => (
+                <circle key={i} cx={xOf(item.d.year)} cy={yOf(item.get(item.d))} r="4"
+                  fill={item.color} stroke="var(--bg2)" strokeWidth="1.5" />
+              ))}
+              {/* X-axis baseline */}
+              <line x1={pL} y1={pT + ch} x2={pL + cw} y2={pT + ch} stroke="var(--border2)" strokeWidth="1" />
+              {/* Axis label */}
+              <text x={pL + cw / 2} y={svgH - 3} textAnchor="middle" fontSize="10" fill="var(--text3)">Years after move decision</text>
+              {/* Legend */}
+              <g transform={`translate(${pL + 12}, ${pT + 10})`}>
+                <line x1={0} y1={6} x2={18} y2={6} stroke="var(--blue)" strokeWidth="2.5" />
+                <text x={22} y={10} fontSize="9" fill="var(--text2)">Stay in {countryA}</text>
+                <line x1={100} y1={6} x2={118} y2={6} stroke="var(--green)" strokeWidth="2.5" />
+                <text x={122} y={10} fontSize="9" fill="var(--text2)">Move to {countryB}</text>
+                <line x1={200} y1={6} x2={210} y2={6} stroke="var(--orange)" strokeWidth="1.5" strokeDasharray="5,3" />
+                <text x={214} y={10} fontSize="9" fill="var(--text3)">Breakeven</text>
+              </g>
+              {/* "Before" / "After" zone labels at top */}
+              {effectiveBkX != null && effectiveBkX - pL > 60 && (
+                <text x={pL + (effectiveBkX - pL) / 2} y={pT + 32} textAnchor="middle" fontSize="9"
+                  fill="rgba(240,96,96,0.7)" fontStyle="italic">higher cost of moving</text>
+              )}
+              {effectiveBkX != null && (pL + cw - effectiveBkX) > 60 && (
+                <text x={effectiveBkX + (pL + cw - effectiveBkX) / 2} y={pT + 32} textAnchor="middle" fontSize="9"
+                  fill="rgba(62,207,142,0.8)" fontStyle="italic">move advantage compounds</text>
+              )}
+            </svg>
+          );
+        }
+
+        // ── Expense Card ─────────────────────────────────────────
+        function CountryExpenseCard({ country, surplus }) {
+          const flag = country === "Malaysia" ? "🇲🇾" : country === "India" ? "🇮🇳" : "🌍";
+          const e = getExpenses(country);
+          const monthly = monthlyTotal(country);
+          const annual = monthly * 12;
+          const isA = country === countryA;
+          return (
+            <div className="section-card" style={{ marginBottom: 0 }}>
+              <div className="country-header">
+                <span className="flag">{flag}</span>
+                <div>
+                  <div className="country-title">{country}</div>
+                  <div style={{ fontSize: 12, color: "var(--text3)" }}>Monthly expenses — USD equiv</div>
+                </div>
+                <button className="ghost-btn" style={{ marginLeft: "auto", fontSize: 11, padding: "4px 10px" }}
+                  onClick={() => {
+                    const def = DEFAULT_COUNTRY_EXPENSES[country];
+                    if (def) onChangeExpenses(prev => ({ ...prev, [country]: { ...def } }));
+                  }}>
+                  ↺ Reset
+                </button>
+              </div>
+              <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+                {EXPENSE_CATEGORIES.map((cat, i) => (
+                  <div key={cat.key} style={{
+                    display: "grid", gridTemplateColumns: "24px 1fr 100px",
+                    gap: 8, padding: "7px 12px", alignItems: "center",
+                    background: i % 2 === 0 ? "transparent" : "var(--bg3)",
+                    borderTop: i > 0 ? "1px solid var(--border)" : "none",
+                  }}>
+                    <span style={{ fontSize: 15 }}>{cat.icon}</span>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 500 }}>{cat.label}</div>
+                      <div style={{ fontSize: 10, color: "var(--text3)" }}>{cat.note}</div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                      <span style={{ fontSize: 11, color: "var(--text3)" }}>$</span>
+                      <input type="number" min={0}
+                        value={e[cat.key] != null ? e[cat.key] : 0}
+                        style={{ width: "100%", textAlign: "right", fontFamily: "'IBM Plex Mono',monospace", padding: "4px 6px", fontSize: 12, background: "var(--bg4)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)" }}
+                        onChange={ev => updateExpense(country, cat.key, Math.max(0, Number(ev.target.value)))} />
+                    </div>
+                  </div>
+                ))}
+                <div style={{
+                  display: "grid", gridTemplateColumns: "24px 1fr 100px",
+                  gap: 8, padding: "10px 12px", alignItems: "center",
+                  background: "var(--bg4)", borderTop: "2px solid var(--border2)",
+                }}>
+                  <span />
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>Total / month</div>
+                  <div style={{ textAlign: "right", fontFamily: "'IBM Plex Mono',monospace", fontWeight: 600, color: "var(--gold)", fontSize: 14 }}>
+                    ${Math.round(monthly).toLocaleString()}
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12 }}>
+                <div className="metric-card">
+                  <div className="metric-label">Annual Expenses</div>
+                  <div className="metric-val" style={{ color: "var(--red)", fontSize: 17 }}>{fmt(annual, "USD")}</div>
+                </div>
+                <div className="metric-card">
+                  <div className="metric-label">Annual Net Surplus</div>
+                  <div className="metric-val" style={{ color: surplus >= 0 ? "var(--green)" : "var(--red)", fontSize: 17 }}>
+                    {surplus >= 0 ? "+" : ""}{fmt(surplus, "USD")}
+                  </div>
+                  <div className="metric-sub">after tax &amp; living costs</div>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        const lastRow = chartData[chartData.length - 1] || {};
+
+        return (
+          <div className="main-wrap">
+            {/* ── Header ── */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 600 }}>Expense Comparison &amp; Move Viability</div>
+                <div style={{ fontSize: 13, color: "var(--text3)", marginTop: 2 }}>
+                  Family of 4 · Kids aged 9 &amp; 13 · All amounts in USD/month unless noted
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 12, color: "var(--text3)" }}>Stay:</span>
+                  <select value={countryA} style={{ width: 120 }}
+                    onChange={e => onChangeSettings(prev => ({ ...prev, expenseCountryA: e.target.value }))}>
+                    {knownCountries.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <span style={{ fontSize: 14, color: "var(--text3)" }}>→</span>
+                  <span style={{ fontSize: 12, color: "var(--text3)" }}>Move:</span>
+                  <select value={countryB} style={{ width: 120 }}
+                    onChange={e => onChangeSettings(prev => ({ ...prev, expenseCountryB: e.target.value }))}>
+                    {knownCountries.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <button className="ghost-btn" style={{ fontSize: 12, padding: "6px 12px" }}
+                  onClick={() => setShowAddCountry(s => !s)}>
+                  {showAddCountry ? "✕ Cancel" : "+ Add Country"}
+                </button>
+              </div>
+            </div>
+
+            {/* ── Add Country Form ── */}
+            {showAddCountry && (
+              <div className="section-card" style={{ marginBottom: 24 }}>
+                <div className="section-title">Add Expense Profile — New Country</div>
+                <div className="field-row" style={{ marginBottom: 12 }}>
+                  <div className="field-group">
+                    <div className="label">Country Name</div>
+                    <input type="text" value={newCountryName} placeholder="e.g. UAE, Singapore, UK"
+                      onChange={e => setNewCountryName(e.target.value)} />
+                  </div>
+                  <div className="field-group" style={{ alignSelf: "flex-end" }}>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button className="ghost-btn"
+                        onClick={() => { setNewCountryExpenses({ ...DEFAULT_COUNTRY_EXPENSES.India }); setNewCountryName(""); }}>
+                        Reset
+                      </button>
+                      <button className="save-btn" onClick={() => {
+                        const n = newCountryName.trim();
+                        if (!n) return;
+                        onChangeExpenses(prev => ({ ...prev, [n]: { ...newCountryExpenses } }));
+                        setShowAddCountry(false); setNewCountryName("");
+                      }}>Save Country</button>
+                    </div>
+                  </div>
+                </div>
+                <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+                  {EXPENSE_CATEGORIES.map((cat, i) => (
+                    <div key={cat.key} style={{
+                      display: "grid", gridTemplateColumns: "24px 1fr 100px",
+                      gap: 8, padding: "7px 12px", alignItems: "center",
+                      background: i % 2 === 0 ? "transparent" : "var(--bg3)",
+                      borderTop: i > 0 ? "1px solid var(--border)" : "none",
+                    }}>
+                      <span style={{ fontSize: 15 }}>{cat.icon}</span>
+                      <div style={{ fontSize: 12, fontWeight: 500 }}>{cat.label}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                        <span style={{ fontSize: 11, color: "var(--text3)" }}>$</span>
+                        <input type="number" min={0} value={newCountryExpenses[cat.key] || 0}
+                          style={{ width: "100%", textAlign: "right", fontFamily: "'IBM Plex Mono',monospace", padding: "4px 6px", fontSize: 12 }}
+                          onChange={ev => setNewCountryExpenses(prev => ({ ...prev, [cat.key]: Math.max(0, Number(ev.target.value)) }))} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── Tax Summary Banner ── */}
+            <div className="total-banner" style={{ marginBottom: 24 }}>
+              {[
+                { label: "Combined Income",        val: fmt(incomeUSD,       "USD"), color: "var(--text)" },
+                { label: `Tax — ${countryA}`,      val: fmt(taxA,            "USD"), color: "var(--blue)",   sub: `US + ${countryA}` },
+                { label: `After-Tax — ${countryA}`,val: fmt(afterTaxA,       "USD"), color: "var(--text)" },
+                { label: `Tax — ${countryB}`,      val: fmt(taxB,            "USD"), color: "var(--orange)", sub: `US + ${countryB}` },
+                { label: `After-Tax — ${countryB}`,val: fmt(afterTaxB,       "USD"), color: "var(--text)" },
+                { label: "Tax Difference",
+                  val: fmt(Math.abs(taxA - taxB), "USD"),
+                  color: taxA > taxB ? "var(--green)" : "var(--red)",
+                  sub: taxA > taxB ? `${countryB} saves on tax` : `${countryA} saves on tax` },
+              ].map((item, i) => (
+                <div key={i} className="total-banner-item">
+                  <div className="total-banner-label">{item.label}</div>
+                  <div className="total-banner-val" style={{ color: item.color, fontSize: 18 }}>{item.val}</div>
+                  {item.sub && <div style={{ fontSize: 10, color: "var(--text3)", marginTop: 2 }}>{item.sub}</div>}
+                </div>
+              ))}
+            </div>
+
+            {/* ── Side-by-side expense cards ── */}
+            <div className="side-by-side" style={{ marginBottom: 24 }}>
+              <CountryExpenseCard country={countryA} surplus={surplusA} />
+              <CountryExpenseCard country={countryB} surplus={surplusB} />
+            </div>
+
+            {/* ── Annual Comparison Table ── */}
+            <div className="section-card" style={{ marginBottom: 24 }}>
+              <div className="section-title">Annual Financial Position Comparison</div>
+              <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: "var(--bg3)" }}>
+                      {["Line Item", countryA, countryB, `Difference (${countryB} vs ${countryA})`].map((h, i) => (
+                        <th key={h} style={{ padding: "10px 14px", textAlign: i === 0 ? "left" : "right",
+                          color: i === 1 ? "var(--blue)" : i === 2 ? "var(--orange)" : "var(--text3)",
+                          fontWeight: i === 0 ? 500 : 600, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      { label: "Gross Income (pre-tax)", a: incomeUSD,  b: incomeUSD,   hasDiff: false },
+                      { label: "Income Tax (all-in)",    a: -taxA,      b: -taxB,        hasDiff: true, negate: true },
+                      { label: "After-Tax Income",       a: afterTaxA,  b: afterTaxB,    hasDiff: true },
+                      { label: "Annual Living Expenses", a: -expensesA, b: -expensesB,   hasDiff: true, negate: true },
+                      { label: "Annual Net Surplus",     a: surplusA,   b: surplusB,     hasDiff: true, bold: true },
+                    ].map((row, i) => {
+                      const diff = row.b - row.a;
+                      return (
+                        <tr key={i} style={{ borderTop: "1px solid var(--border)", background: i % 2 === 0 ? "transparent" : "var(--bg3)" }}>
+                          <td style={{ padding: "10px 14px", fontWeight: row.bold ? 600 : 400 }}>{row.label}</td>
+                          {[row.a, row.b].map((v, j) => (
+                            <td key={j} style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'IBM Plex Mono',monospace",
+                              color: v < 0 ? "var(--red)" : "var(--text)" }}>
+                              {row.negate ? `(${fmt(Math.abs(v), "USD")})` : fmt(v, "USD")}
+                            </td>
+                          ))}
+                          {row.hasDiff ? (
+                            <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'IBM Plex Mono',monospace",
+                              color: diff > 50 ? "var(--green)" : diff < -50 ? "var(--red)" : "var(--text3)",
+                              fontWeight: row.bold ? 600 : 400 }}>
+                              {diff > 0 ? "+" : ""}{fmt(diff, "USD")}
+                            </td>
+                          ) : <td />}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ marginTop: 10, fontSize: 12, color: "var(--text3)", lineHeight: 1.7 }}>
+                Annual advantage of moving to {countryB}:{" "}
+                <strong style={{ color: annualAdvantage > 0 ? "var(--green)" : "var(--red)", fontFamily: "'IBM Plex Mono',monospace" }}>
+                  {annualAdvantage > 0 ? "+" : ""}{fmt(annualAdvantage, "USD")}/yr
+                </strong>
+                {" · "}Move cost: <strong style={{ fontFamily: "'IBM Plex Mono',monospace" }}>{fmt(moveCost, "USD")}</strong>
+                {" · "}Breakeven:{" "}
+                <strong style={{ color: "var(--orange)", fontFamily: "'IBM Plex Mono',monospace" }}>
+                  {annualAdvantage > 0 ? breakevenYears.toFixed(1) + " years" : "never at current assumptions"}
+                </strong>
+              </div>
+            </div>
+
+            {/* ── Breakeven Chart ── */}
+            <div className="section-card" style={{ marginBottom: 24 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 600 }}>Move Breakeven Visualization</div>
+                  <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 4, lineHeight: 1.6 }}>
+                    Cumulative financial position over time · Blue = stay in {countryA} · Green = move to {countryB} · Compounded at {investReturnPct}%/yr
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                  {[
+                    { label: "Move Cost ($)", key: "moveCost", min: 0, max: 200000, step: 500, val: moveCost },
+                    { label: "Horizon (yrs)", key: "breakEvenHorizon", min: 3, max: 30, step: 1, val: horizonYears },
+                    { label: "Return (%)", key: "investmentReturnPct", min: 0, max: 20, step: 0.5, val: investReturnPct },
+                  ].map(f => (
+                    <div key={f.key} className="field-group" style={{ marginBottom: 0, minWidth: 90 }}>
+                      <div className="label">{f.label}</div>
+                      <input type="number" min={f.min} max={f.max} step={f.step} value={f.val}
+                        style={{ padding: "5px 8px", fontSize: 12, fontFamily: "'IBM Plex Mono',monospace", width: 90 }}
+                        onChange={e => {
+                          const v = Number(e.target.value);
+                          onChangeSettings(prev => ({ ...prev, [f.key]: Math.max(f.min, Math.min(f.max || 1e9, v)) }));
+                        }} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Key metric cards */}
+              <div className="metric-grid" style={{ marginBottom: 16 }}>
+                <div className="metric-card">
+                  <div className="metric-label">Annual Advantage ({countryB})</div>
+                  <div className="metric-val" style={{ color: annualAdvantage > 0 ? "var(--green)" : "var(--red)", fontSize: 17 }}>
+                    {annualAdvantage > 0 ? "+" : ""}{fmt(annualAdvantage, "USD")}
+                  </div>
+                  <div className="metric-sub">after tax &amp; living cost diff</div>
+                </div>
+                <div className="metric-card">
+                  <div className="metric-label">Breakeven Point</div>
+                  <div className="metric-val" style={{ color: "var(--orange)", fontSize: 17 }}>
+                    {annualAdvantage > 0 ? (breakevenYears < 1 ? "< 1 yr" : breakevenYears.toFixed(1) + " yrs") : "Never"}
+                  </div>
+                  <div className="metric-sub">to recover {fmt(moveCost, "USD")} relocation cost</div>
+                </div>
+                <div className="metric-card">
+                  <div className="metric-label">Yr {horizonYears} Cumulative Advantage</div>
+                  <div className="metric-val" style={{ color: (lastRow.movePos || 0) > (lastRow.stayPos || 0) ? "var(--green)" : "var(--red)", fontSize: 17 }}>
+                    {fmt((lastRow.movePos || 0) - (lastRow.stayPos || 0), "USD")}
+                  </div>
+                  <div className="metric-sub">move vs. stay · {investReturnPct}% compounded</div>
+                </div>
+              </div>
+
+              {/* SVG chart */}
+              <div style={{ background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 10, padding: "16px 8px 10px" }}>
+                <BreakevenChart />
+              </div>
+
+              {/* Before / after zone descriptions */}
+              {annualAdvantage > 0 && breakevenYears <= horizonYears && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 14 }}>
+                  <div style={{ background: "rgba(240,96,96,0.07)", border: "1px solid var(--red2)", borderRadius: 8, padding: "12px 16px" }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "var(--red)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+                      Before Breakeven · Yr 0 → {breakevenYears.toFixed(1)}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text2)", lineHeight: 1.65 }}>
+                      The {fmt(moveCost, "USD")} relocation cost hasn't been recovered yet.
+                      The move starts {fmt(moveCost, "USD")} behind and closes the gap at ~{fmt(annualAdvantage, "USD")}/yr.
+                    </div>
+                  </div>
+                  <div style={{ background: "rgba(62,207,142,0.07)", border: "1px solid var(--green2)", borderRadius: 8, padding: "12px 16px" }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "var(--green)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+                      After Breakeven · Yr {breakevenYears.toFixed(1)} → {horizonYears}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text2)", lineHeight: 1.65 }}>
+                      Every year beyond breakeven adds ~{fmt(annualAdvantage, "USD")} of advantage compounding at {investReturnPct}%.
+                      By year {horizonYears} you're {fmt(Math.abs((lastRow.movePos || 0) - (lastRow.stayPos || 0)), "USD")} ahead.
+                    </div>
+                  </div>
+                </div>
+              )}
+              {annualAdvantage <= 0 && (
+                <div className="warn-box" style={{ marginTop: 14 }}>
+                  Moving to {countryB} does not produce a net financial advantage at current income and expense assumptions.
+                  The higher costs or taxes in {countryA} do not fully offset the lower costs in {countryB}.
+                  Try adjusting the school type, housing, or income to see how the picture changes.
+                </div>
+              )}
+            </div>
+
+            {/* ── Year-by-year table ── */}
+            <div className="section-card">
+              <div className="section-title">Year-by-Year Cumulative Projection</div>
+              <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: "var(--bg3)" }}>
+                      {["Year", `Stay in ${countryA}`, `Move to ${countryB}`, "Net Move Advantage", "Status"].map((h, i) => (
+                        <th key={h} style={{ padding: "8px 12px", textAlign: i === 0 || i === 4 ? "left" : "right",
+                          color: i === 1 ? "var(--blue)" : i === 2 ? "var(--green)" : "var(--text3)",
+                          fontWeight: 500, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {chartData.map((row, i) => {
+                      const advantage = row.movePos - row.stayPos;
+                      const isBkRow = i > 0 && chartData[i - 1].movePos < 0 && row.movePos >= 0;
+                      const isCrossRow = i > 0 && (chartData[i - 1].movePos - chartData[i - 1].stayPos) < 0 && advantage >= 0;
+                      const highlight = isBkRow || isCrossRow;
+                      return (
+                        <tr key={i} style={{
+                          borderTop: "1px solid var(--border)",
+                          background: highlight ? "rgba(62,207,142,0.08)" : i % 2 === 0 ? "transparent" : "var(--bg3)",
+                        }}>
+                          <td style={{ padding: "8px 12px", fontWeight: highlight ? 600 : 400, color: highlight ? "var(--green)" : "var(--text)" }}>
+                            {row.year === 0 ? "Move Day" : `Year ${row.year}`}{highlight ? " ✅ BREAKEVEN" : ""}
+                          </td>
+                          <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "'IBM Plex Mono',monospace", color: "var(--blue)" }}>
+                            {fmt(row.stayPos, "USD")}
+                          </td>
+                          <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "'IBM Plex Mono',monospace",
+                            color: row.movePos >= 0 ? "var(--green)" : "var(--red)" }}>
+                            {fmt(row.movePos, "USD")}
+                          </td>
+                          <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "'IBM Plex Mono',monospace",
+                            color: advantage > 0 ? "var(--green)" : "var(--red)", fontWeight: highlight ? 600 : 400 }}>
+                            {advantage > 0 ? "+" : ""}{fmt(advantage, "USD")}
+                          </td>
+                          <td style={{ padding: "8px 12px", fontSize: 11, color: "var(--text3)" }}>
+                            {row.year === 0 ? "Move cost incurred" : row.movePos < 0 ? "⏳ Recovering move cost" : advantage < 0 ? "🔵 Stay still ahead" : "🟢 Move pays off"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 8, lineHeight: 1.6 }}>
+                Cumulative positions assume {investReturnPct}% annual return on net savings. "Net Move Advantage" = Move cumulative − Stay cumulative.
+                Tax computations use current income with each country's full tax rules applied separately.
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // ============================================================
       // MAIN APP
       // ============================================================
       function usePersisted(key, defaultVal) {
@@ -9186,6 +9875,10 @@
         const [income, setIncome] = usePersisted(
           "expattax_income",
           DEFAULT_INCOME,
+        );
+        const [expenses, setExpenses] = usePersisted(
+          "expattax_expenses",
+          DEFAULT_EXPENSES,
         );
 
         const handleSaveSettings = (newSettings) => {
@@ -9275,6 +9968,7 @@
                 { id: "setup", label: "Setup" },
                 { id: "income", label: "Income" },
                 { id: "results", label: "Taxes" },
+                { id: "expenses", label: "Expenses" },
                 { id: "planning", label: "Planning" },
               ].map((item) => (
                 <button
@@ -9564,6 +10258,16 @@
                   possible deductions.
                 </div>
               </div>
+            )}
+
+            {tab === "expenses" && (
+              <ExpensesPanel
+                settings={settings}
+                income={income}
+                expenses={expenses}
+                onChangeExpenses={setExpenses}
+                onChangeSettings={setSettings}
+              />
             )}
 
             {tab === "planning" && (
