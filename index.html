@@ -1452,6 +1452,7 @@
         year,
         indiaTaxPaid,
         useFEIE,
+        numQualifyingChildren = 0, // children under 17
       }) {
         const td = US_TAX_DATA[year];
         if (!td) return null;
@@ -1547,7 +1548,28 @@
             ? grossTax * (foreignIncome / totalGrossIncome)
             : 0;
         const ftcClaimed = Math.min(indiaTaxPaid, ftcLimit);
-        const netUSTax = Math.max(0, grossTax - ftcClaimed);
+        const taxAfterFTC = Math.max(0, grossTax - ftcClaimed);
+
+        // ── Child Tax Credit (CTC) & Additional CTC (ACTC) ──────
+        // 2018+ rules: $2,000/qualifying child under 17
+        // Phase-out: $50 per $1,000 (or fraction) of MAGI above threshold
+        const ctcPerChild = year >= 2018 ? 2000 : year >= 2003 ? 1000 : 600;
+        const actcPerChild = year >= 2024 ? 1700 : year >= 2022 ? 1500 : 1400; // refundable cap
+        const ctcPhaseoutThresh = isMFJ ? 400000 : 200000;
+        const ctcPhaseoutExcess = Math.max(0, agi - ctcPhaseoutThresh);
+        const ctcPhaseoutUnits = Math.ceil(ctcPhaseoutExcess / 1000);
+        const ctcPhaseout = ctcPhaseoutUnits * 50 * numQualifyingChildren;
+        const maxCTC = Math.max(0, ctcPerChild * numQualifyingChildren - ctcPhaseout);
+        // Non-refundable portion: reduces tax after FTC, not below 0
+        const ctcNonRefundable = Math.min(maxCTC, taxAfterFTC);
+        const taxAfterCTC = Math.max(0, taxAfterFTC - ctcNonRefundable);
+        // Additional CTC (refundable): 15% of earned income above $2,500, capped at $1,700/child
+        const earnedIncome = Math.max(0, wages - feieExcludedWages) + Math.max(0, businessIncome - feieExcludedBusiness);
+        const actcEarnedBase = Math.max(0, earnedIncome - 2500) * 0.15;
+        const maxACTC = Math.max(0, maxCTC - ctcNonRefundable); // only the unused CTC can become ACTC
+        const actcCredit = Math.min(actcEarnedBase, maxACTC, actcPerChild * numQualifyingChildren);
+        // Net US tax (ACTC is a refund — can make this negative, meaning IRS pays you)
+        const netUSTax = taxAfterCTC - actcCredit;
 
         // Marginal rate: top bracket hit by taxable ordinary income
         let marginalOrdRate = 0;
@@ -1578,6 +1600,10 @@
           ftcLimit,
           ftcClaimed,
           netUSTax,
+          ctcCredit: ctcNonRefundable,
+          actcCredit,
+          maxCTC,
+          numQualifyingChildren,
           stdDed,
           personalEx,
           ltcgRate,
@@ -2158,6 +2184,7 @@
           year: taxYear,
           indiaTaxPaid: indiaTaxUSD,
           useFEIE,
+          numQualifyingChildren: (settings.children || []).filter(c => (c.age || 0) < 17).length,
         };
 
         let usResult = null;
@@ -2511,6 +2538,8 @@
         includeUS: true,
         includeUSRealEstate: true,
         usPropertyPrice: 0,
+        // Family profile
+        children: [{ age: 9 }, { age: 13 }], // configurable — drives CTC and expense defaults
         // Expense comparison & breakeven
         expenseCountryA: "Malaysia",
         expenseCountryB: "India",
@@ -2518,6 +2547,7 @@
         breakEvenHorizon: 15,
         investmentReturnPct: 7,
       };
+
 
       const DEFAULT_INCOME = {
         passiveIncomeMode: "manual",
@@ -2842,6 +2872,45 @@
               </div>
             )}
           </div>
+        );
+      }
+
+      function ExpenseInput({ value, onChange, style, className, placeholder = "0", allowFloat = false }) {
+        const [valStr, setValStr] = React.useState(value != null ? String(value) : "");
+        const focusedRef = React.useRef(false);
+
+        React.useEffect(() => {
+          if (!focusedRef.current) {
+            setValStr(value != null && value !== 0 ? String(value) : (value === 0 ? "0" : ""));
+          }
+        }, [value]);
+
+        return (
+          <input
+            type="text"
+            inputMode={allowFloat ? "decimal" : "numeric"}
+            value={valStr}
+            placeholder={placeholder}
+            className={className}
+            style={style}
+            onFocus={(e) => {
+              focusedRef.current = true;
+              e.target.select();
+            }}
+            onChange={(e) => {
+              const raw = e.target.value;
+              setValStr(raw);
+              const parsed = parseAmount(raw);
+              onChange(Math.max(0, allowFloat ? parsed : Math.round(parsed)));
+            }}
+            onBlur={() => {
+              focusedRef.current = false;
+              const parsed = parseAmount(valStr);
+              const finalVal = Math.max(0, allowFloat ? parsed : Math.round(parsed));
+              setValStr(String(finalVal));
+              onChange(finalVal);
+            }}
+          />
         );
       }
 
@@ -4240,6 +4309,59 @@
                 </div>
 
                 <div className="section-card">
+                  <div className="section-title">Family Profile — Dependents</div>
+                  <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 12, lineHeight: 1.6 }}>
+                    Children's ages drive the <strong>US Child Tax Credit</strong> (qualifying = under 17) and set expense defaults for school, activities, and healthcare on the Expenses tab.
+                  </div>
+                  {(s.children || []).map((child, idx) => {
+                    const isQualifying = (child.age || 0) < 17;
+                    return (
+                      <div key={idx} style={{
+                        display: "flex", alignItems: "center", gap: 10, marginBottom: 8,
+                        background: "var(--bg3)", borderRadius: 8, padding: "8px 12px",
+                        border: `1px solid ${isQualifying ? "var(--green2)" : "var(--border)"}`,
+                      }}>
+                        <span style={{ fontSize: 16 }}>{isQualifying ? "👧" : "🧑"}</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 12, color: "var(--text2)" }}>Child {idx + 1}</div>
+                          <div style={{ fontSize: 10, color: isQualifying ? "var(--green)" : "var(--text3)" }}>
+                            {isQualifying ? "✓ Qualifies for CTC (under 17)" : "Does not qualify for CTC (17+)"}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontSize: 11, color: "var(--text3)" }}>Age</span>
+                          <input type="number" min={0} max={25}
+                            value={child.age ?? ""}
+                            style={{ width: 60, textAlign: "center", fontFamily: "'IBM Plex Mono',monospace", padding: "4px 6px", fontSize: 13 }}
+                            onChange={e => {
+                              const newAge = Math.max(0, Math.min(25, Number(e.target.value)));
+                              const updated = (s.children || []).map((c, i) => i === idx ? { ...c, age: newAge } : c);
+                              upd("children", updated);
+                            }} />
+                        </div>
+                        <button className="ghost-btn" style={{ fontSize: 11, padding: "3px 8px", color: "var(--red)" }}
+                          onClick={() => {
+                            const updated = (s.children || []).filter((_, i) => i !== idx);
+                            upd("children", updated);
+                          }}>✕</button>
+                      </div>
+                    );
+                  })}
+                  <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                    <button className="ghost-btn" style={{ fontSize: 12 }}
+                      onClick={() => upd("children", [...(s.children || []), { age: 8 }])}>
+                      + Add Child
+                    </button>
+                    {(s.children || []).length === 0 && (
+                      <span style={{ fontSize: 12, color: "var(--text3)", alignSelf: "center" }}>No children configured — CTC will be $0</span>
+                    )}
+                  </div>
+                  <div className="info-box" style={{ marginTop: 12 }}>
+                    <strong>CTC 2024:</strong> $2,000/child under 17 · Phases out above $400K income (MFJ) · Up to $1,700 refundable (ACTC) · Applied after the Foreign Tax Credit
+                  </div>
+                </div>
+
+                <div className="section-card">
                   <div className="section-title">US Return Strategy</div>
                   <div style={{ display: "grid", gap: 10 }}>
                     <div
@@ -4555,26 +4677,27 @@
                   <div className="field-row-3">
                     <div className="field-group">
                       <div className="label">Relocation Cost ($)</div>
-                      <input type="number" min={0} step={500}
+                      <ExpenseInput
                         value={s.moveCost || 15000}
-                        onChange={e => upd("moveCost", Math.max(0, Number(e.target.value)))}
+                        onChange={v => upd("moveCost", Math.max(0, v))}
                         style={{ textAlign: "right", fontFamily: "'IBM Plex Mono',monospace" }}
                       />
                       <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>One-time move cost (shipping, flights, deposits)</div>
                     </div>
                     <div className="field-group">
                       <div className="label">Breakeven Horizon (yrs)</div>
-                      <input type="number" min={3} max={30}
+                      <ExpenseInput
                         value={s.breakEvenHorizon || 15}
-                        onChange={e => upd("breakEvenHorizon", Math.max(3, Math.min(30, Number(e.target.value))))}
+                        onChange={v => upd("breakEvenHorizon", Math.max(1, Math.min(50, v)))}
                         style={{ textAlign: "right", fontFamily: "'IBM Plex Mono',monospace" }}
                       />
                     </div>
                     <div className="field-group">
                       <div className="label">Investment Return (%)</div>
-                      <input type="number" min={0} max={20} step={0.5}
+                      <ExpenseInput
                         value={s.investmentReturnPct || 7}
-                        onChange={e => upd("investmentReturnPct", Math.max(0, Math.min(20, Number(e.target.value))))}
+                        allowFloat={true}
+                        onChange={v => upd("investmentReturnPct", Math.max(0, Math.min(50, v)))}
                         style={{ textAlign: "right", fontFamily: "'IBM Plex Mono',monospace" }}
                       />
                       <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>Annual return on surplus savings (compounds)</div>
@@ -7289,10 +7412,39 @@
                   {fmt(r.ftcClaimed, "USD")}
                 </span>
               </div>
+              {/* Child Tax Credit */}
+              {(r.ctcCredit > 0 || r.actcCredit > 0) && (
+                <div style={{
+                  background: "var(--green3)",
+                  border: "1px solid var(--green2)",
+                  borderRadius: 8,
+                  padding: "10px 14px",
+                  marginTop: 8,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 12,
+                  flexWrap: "wrap",
+                }}>
+                  <div>
+                    <div style={{ fontSize: 12, color: "var(--green)", fontWeight: 600, marginBottom: 2 }}>
+                      Child Tax Credit — {r.numQualifyingChildren} qualifying {r.numQualifyingChildren === 1 ? "child" : "children"} (under 17)
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text2)" }}>
+                      Max CTC: {fmt(r.maxCTC, "USD")}
+                      {r.ctcCredit > 0 && ` | Non-refundable applied: ${fmt(r.ctcCredit, "USD")}`}
+                      {r.actcCredit > 0 && ` | Refundable ACTC: ${fmt(r.actcCredit, "USD")}`}
+                    </div>
+                  </div>
+                  <span className="badge badge-green">−{fmt(r.ctcCredit + r.actcCredit, "USD")}</span>
+                </div>
+              )}
               <div className="breakdown-row total" style={{ marginTop: 8 }}>
                 <span>Net US Federal Tax Owed</span>
-                <span className="breakdown-val negative">
-                  {fmt(r.netUSTax, "USD")}
+                <span className={`breakdown-val ${r.netUSTax <= 0 ? "" : "negative"}`}>
+                  {r.netUSTax < 0
+                    ? <span style={{ color: "var(--green)" }}>+{fmt(-r.netUSTax, "USD")} refund</span>
+                    : fmt(r.netUSTax, "USD")}
                 </span>
               </div>
               {r.ftcClaimed < indiaTaxUSD && indiaTaxUSD > 0 && (
@@ -7301,10 +7453,9 @@
                   Excess credits can be carried back 1 year or forward 10 years.
                 </div>
               )}
-              {r.netUSTax === 0 && r.grossTax > 0 && (
+              {r.netUSTax <= 0 && r.grossTax > 0 && (
                 <div className="info-box" style={{ marginTop: 8 }}>
-                  ✓ {settings.expatCountry} taxes fully offset US liability. No additional US tax
-                  owed.
+                  ✓ {settings.expatCountry} taxes{r.ctcCredit + r.actcCredit > 0 ? " + CTC" : ""} fully offset US liability.{r.netUSTax < 0 ? ` ACTC generates a ${fmt(-r.netUSTax, "USD")} refund.` : " No additional US tax owed."}
                 </div>
               )}
             </div>
@@ -9264,8 +9415,26 @@
         const [newCountryName, setNewCountryName] = React.useState("");
         const [newCountryExpenses, setNewCountryExpenses] = React.useState({ ...DEFAULT_COUNTRY_EXPENSES.India });
 
+        // Per-child expense scaling (school + healthcare; user can override)
+        const numKids = (settings.children || []).length;
+        // Base per-child amounts (1 kid baseline from DEFAULT_COUNTRY_EXPENSES)
+        const PER_CHILD_SCHOOL = { Malaysia: 1400, India: 600 };    // per kid/mo
+        const PER_CHILD_HEALTH = { Malaysia: 120,  India: 50 };     // per kid/mo
+
+        function scaledDefault(country) {
+          const base = DEFAULT_COUNTRY_EXPENSES[country];
+          if (!base) return Object.fromEntries(EXPENSE_CATEGORIES.map(c => [c.key, 0]));
+          const kidsMultiplier = numKids > 0 ? numKids : 2; // keep 2-kid default if unconfigured
+          return {
+            ...base,
+            school:     Math.round((PER_CHILD_SCHOOL[country] || base.school / 2) * kidsMultiplier),
+            healthcare: Math.round((PER_CHILD_HEALTH[country] || base.healthcare / 2) * kidsMultiplier),
+          };
+        }
+
         function getExpenses(country) {
-          return expenses[country] || DEFAULT_COUNTRY_EXPENSES[country] || Object.fromEntries(EXPENSE_CATEGORIES.map(c => [c.key, 0]));
+          // Use stored overrides, falling back to child-count-scaled defaults
+          return expenses[country] || scaledDefault(country) || Object.fromEntries(EXPENSE_CATEGORIES.map(c => [c.key, 0]));
         }
 
         function monthlyTotal(country) {
@@ -9469,7 +9638,7 @@
                 </div>
                 <button className="ghost-btn" style={{ marginLeft: "auto", fontSize: 11, padding: "4px 10px" }}
                   onClick={() => {
-                    const def = DEFAULT_COUNTRY_EXPENSES[country];
+                    const def = scaledDefault(country);
                     if (def) onChangeExpenses(prev => ({ ...prev, [country]: { ...def } }));
                   }}>
                   ↺ Reset
@@ -9490,10 +9659,11 @@
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
                       <span style={{ fontSize: 11, color: "var(--text3)" }}>$</span>
-                      <input type="number" min={0}
-                        value={e[cat.key] != null ? e[cat.key] : 0}
+                      <ExpenseInput
+                        value={e[cat.key]}
                         style={{ width: "100%", textAlign: "right", fontFamily: "'IBM Plex Mono',monospace", padding: "4px 6px", fontSize: 12, background: "var(--bg4)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)" }}
-                        onChange={ev => updateExpense(country, cat.key, Math.max(0, Number(ev.target.value)))} />
+                        onChange={v => updateExpense(country, cat.key, v)}
+                      />
                     </div>
                   </div>
                 ))}
@@ -9596,9 +9766,11 @@
                       <div style={{ fontSize: 12, fontWeight: 500 }}>{cat.label}</div>
                       <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
                         <span style={{ fontSize: 11, color: "var(--text3)" }}>$</span>
-                        <input type="number" min={0} value={newCountryExpenses[cat.key] || 0}
+                        <ExpenseInput
+                          value={newCountryExpenses[cat.key]}
                           style={{ width: "100%", textAlign: "right", fontFamily: "'IBM Plex Mono',monospace", padding: "4px 6px", fontSize: 12 }}
-                          onChange={ev => setNewCountryExpenses(prev => ({ ...prev, [cat.key]: Math.max(0, Number(ev.target.value)) }))} />
+                          onChange={v => setNewCountryExpenses(prev => ({ ...prev, [cat.key]: v }))}
+                        />
                       </div>
                     </div>
                   ))}
@@ -9708,12 +9880,14 @@
                   ].map(f => (
                     <div key={f.key} className="field-group" style={{ marginBottom: 0, minWidth: 90 }}>
                       <div className="label">{f.label}</div>
-                      <input type="number" min={f.min} max={f.max} step={f.step} value={f.val}
-                        style={{ padding: "5px 8px", fontSize: 12, fontFamily: "'IBM Plex Mono',monospace", width: 90 }}
-                        onChange={e => {
-                          const v = Number(e.target.value);
+                      <ExpenseInput
+                        value={f.val}
+                        allowFloat={f.key === "investmentReturnPct"}
+                        style={{ padding: "5px 8px", fontSize: 12, fontFamily: "'IBM Plex Mono',monospace", width: 90, textAlign: "right" }}
+                        onChange={v => {
                           onChangeSettings(prev => ({ ...prev, [f.key]: Math.max(f.min, Math.min(f.max || 1e9, v)) }));
-                        }} />
+                        }}
+                      />
                     </div>
                   ))}
                 </div>
