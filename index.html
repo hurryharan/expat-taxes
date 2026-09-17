@@ -2546,7 +2546,16 @@
         moveCost: 15000,
         breakEvenHorizon: 15,
         investmentReturnPct: 7,
+        // Holistic non-tangibles & risk valuation
+        enableNonTangibles: true,
+        complianceCostSaved: 5400,     // $4,000 time (80 hrs @ $50/hr) + $1,400 CA fees
+        auditRiskPremium: 6000,        // $30,000 audit defense amortized over 5 yrs
+        infrastructureDragStay: 10400,  // 4 hrs/wk time friction @ $50/hr MVT
+        infrastructureDragMove: 0,
+        strategicTravelCostMove: 2660,  // 10 return trips / relationship anchor costs
+        hourlyMVT: 50,                 // $50/hr minimum value of time
       };
+
 
 
       const DEFAULT_INCOME = {
@@ -3863,6 +3872,44 @@
           );
         });
 
+        // ── Holistic Risk & Friction-Adjusted Surplus & Slingshot ──
+        addSection(
+          "HOLISTIC RISK & FRICTION-ADJUSTED SURPLUS & WEALTH SLINGSHOT",
+          "Comprehensive quantitative model overlaying administrative friction, compliance overhead, audit risk, infrastructure MVT drag, and strategic travel costs onto financial net surplus, compounded over 15 years @ 7%."
+        );
+        const enableNT = settings.enableNonTangibles !== false;
+        const compCost = settings.complianceCostSaved != null ? settings.complianceCostSaved : 5400;
+        const auditRisk = settings.auditRiskPremium != null ? settings.auditRiskPremium : 6000;
+        const infraStay = settings.infrastructureDragStay != null ? settings.infrastructureDragStay : 10400;
+        const infraMove = settings.infrastructureDragMove != null ? settings.infrastructureDragMove : 0;
+        const travelMove = settings.strategicTravelCostMove != null ? settings.strategicTravelCostMove : 2660;
+
+        const stayDrag = enableNT ? (infraStay + compCost + auditRisk) : 0;
+        const moveDrag = enableNT ? (travelMove + infraMove) : 0;
+
+        const adjSurplusA = afterTaxAVal - annA - stayDrag;
+        const adjSurplusB = afterTaxBVal - annB - moveDrag;
+        const adjAnnualAdvantage = adjSurplusB - adjSurplusA;
+
+        let cumA_adj = 0, cumMove_adj = -moveCost;
+        for (let y = 1; y <= 15; y++) {
+          cumA_adj = cumA_adj * (1 + investReturn) + adjSurplusA;
+          cumMove_adj = cumMove_adj * (1 + investReturn) + adjSurplusB;
+        }
+        const slingshotDelta15 = cumMove_adj - cumA_adj;
+
+        addLine("Non-Tangibles Valuation Status", enableNT ? "ENABLED" : "DISABLED");
+        addLine("Compliance Time & Out-of-Pocket Saved", `${countryA}: (${fmt(compCost, "USD")}/yr) | ${countryB}: $0`);
+        addLine("Amortized Audit Risk Premium", `${countryA}: (${fmt(auditRisk, "USD")}/yr) | ${countryB}: $0`);
+        addLine("Infrastructure MVT Time Penalty", `${countryA}: (${fmt(infraStay, "USD")}/yr) | ${countryB}: (${fmt(infraMove, "USD")}/yr)`);
+        addLine("Strategic Travel / Anchor Costs", `${countryA}: $0 | ${countryB}: (${fmt(travelMove, "USD")}/yr)`);
+        addLine(`True Adjusted Net Annual Surplus — ${countryA}`, fmt(adjSurplusA, "USD"));
+        addLine(`True Adjusted Net Annual Surplus — ${countryB}`, fmt(adjSurplusB, "USD"));
+        addLine(`Net Relocation Capital Delta (${countryB} vs ${countryA})`, `+${fmt(adjAnnualAdvantage, "USD")}/yr`);
+        addLine(`Stay in ${countryA} 15-Year Wealth Matrix (Risk/Time Drag)`, fmt(cumA_adj, "USD"));
+        addLine(`Move to ${countryB} 15-Year Strategy (Optimized)`, fmt(cumMove_adj, "USD"));
+        addLine("Net 15-Year Stratospheric Advantage", `+${fmt(slingshotDelta15, "USD")} (compounded @ ${investReturnPct}%)`);
+
         addSection(
           "INCOME ENTRIES",
           "All gross earned, investment, rental, and self-employment income streams entered into the tax model."
@@ -4865,6 +4912,72 @@
                   </div>
                   <div className="info-box">
                     Full expense line items and the breakeven visualization are on the <strong>Expenses</strong> tab.
+                  </div>
+                </div>
+
+                <div className="section-card">
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 10 }}>
+                    <div className="section-title" style={{ margin: 0 }}>Non-Tangible Risk &amp; Friction Valuations</div>
+                    <Toggle
+                      checked={s.enableNonTangibles !== false}
+                      onChange={v => upd("enableNonTangibles", v)}
+                      label="Include Non-Tangibles in Surplus"
+                    />
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 14, lineHeight: 1.6 }}>
+                    Convert qualitative friction (administrative overhead, compliance drag, audit risk, infrastructure MVT time penalty, and strategic travel) into quantitative USD/year friction metrics.
+                  </div>
+                  <div className="field-row">
+                    <div className="field-group">
+                      <div className="label">Compliance Time &amp; Out-of-Pocket Saved ($/yr)</div>
+                      <ExpenseInput
+                        value={s.complianceCostSaved != null ? s.complianceCostSaved : 5400}
+                        onChange={v => upd("complianceCostSaved", Math.max(0, v))}
+                        style={{ textAlign: "right", fontFamily: "'IBM Plex Mono',monospace" }}
+                      />
+                      <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>Default: $5,400/yr (80 hrs @ $50/hr MVT + $1,400 CA/advisory fees)</div>
+                    </div>
+                    <div className="field-group">
+                      <div className="label">Amortized Audit Risk Premium ($/yr)</div>
+                      <ExpenseInput
+                        value={s.auditRiskPremium != null ? s.auditRiskPremium : 6000}
+                        onChange={v => upd("auditRiskPremium", Math.max(0, v))}
+                        style={{ textAlign: "right", fontFamily: "'IBM Plex Mono',monospace" }}
+                      />
+                      <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>Default: $6,000/yr ($30,000 audit defense amortized over 5 yrs)</div>
+                    </div>
+                  </div>
+                  <div className="field-row-3">
+                    <div className="field-group">
+                      <div className="label">Infrastructure MVT Drag — Stay ($/yr)</div>
+                      <ExpenseInput
+                        value={s.infrastructureDragStay != null ? s.infrastructureDragStay : 10400}
+                        onChange={v => upd("infrastructureDragStay", Math.max(0, v))}
+                        style={{ textAlign: "right", fontFamily: "'IBM Plex Mono',monospace" }}
+                      />
+                      <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>Time friction in Stay location (4 hrs/wk @ $50/hr MVT)</div>
+                    </div>
+                    <div className="field-group">
+                      <div className="label">Strategic Travel Cost — Move ($/yr)</div>
+                      <ExpenseInput
+                        value={s.strategicTravelCostMove != null ? s.strategicTravelCostMove : 2660}
+                        onChange={v => upd("strategicTravelCostMove", Math.max(0, v))}
+                        style={{ textAlign: "right", fontFamily: "'IBM Plex Mono',monospace" }}
+                      />
+                      <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>Relationship anchor costs / 10 return trips</div>
+                    </div>
+                    <div className="field-group">
+                      <div className="label">Hourly MVT Benchmark ($/hr)</div>
+                      <ExpenseInput
+                        value={s.hourlyMVT != null ? s.hourlyMVT : 50}
+                        onChange={v => upd("hourlyMVT", Math.max(0, v))}
+                        style={{ textAlign: "right", fontFamily: "'IBM Plex Mono',monospace" }}
+                      />
+                      <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>Minimum Value of Time benchmark</div>
+                    </div>
+                  </div>
+                  <div className="info-box" style={{ marginTop: 12 }}>
+                    <strong>Holistic Surplus:</strong> True Adjusted Net Surplus = After-Tax Income − Living Expenses − Non-Tangible Friction Drag.
                   </div>
                 </div>
 
@@ -10367,6 +10480,141 @@
                   </div>
                   <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 8, lineHeight: 1.6 }}>
                     💡 <strong>Insight:</strong> Higher earned incomes amplify the tax rate differential between {countryA} and {countryB}, expanding annual net savings and accelerating breakeven.
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ── Holistic Risk & Friction-Adjusted Surplus & Wealth Slingshot ── */}
+            {(() => {
+              const enableNT = settings.enableNonTangibles !== false;
+              const compCost = settings.complianceCostSaved != null ? settings.complianceCostSaved : 5400;
+              const auditRisk = settings.auditRiskPremium != null ? settings.auditRiskPremium : 6000;
+              const infraStay = settings.infrastructureDragStay != null ? settings.infrastructureDragStay : 10400;
+              const infraMove = settings.infrastructureDragMove != null ? settings.infrastructureDragMove : 0;
+              const travelMove = settings.strategicTravelCostMove != null ? settings.strategicTravelCostMove : 2660;
+
+              // Risk-Adjusted Surpluses
+              const stayDrag = enableNT ? (infraStay + compCost + auditRisk) : 0;
+              const moveDrag = enableNT ? (travelMove + infraMove) : 0;
+
+              const adjSurplusA = afterTaxA - expensesA - stayDrag;
+              const adjSurplusB = afterTaxB - expensesB - moveDrag;
+              const adjAnnualAdvantage = adjSurplusB - adjSurplusA;
+              const adjBreakevenYears = adjAnnualAdvantage > 0 ? moveCost / adjAnnualAdvantage : Infinity;
+
+              // 15-Year Compounded Slingshot
+              let cumA_adj = 0, cumMove_adj = -moveCost;
+              for (let y = 1; y <= 15; y++) {
+                cumA_adj = cumA_adj * (1 + investReturn) + adjSurplusA;
+                cumMove_adj = cumMove_adj * (1 + investReturn) + adjSurplusB;
+              }
+              const slingshotDelta15 = cumMove_adj - cumA_adj;
+
+              return (
+                <div className="section-card" style={{ marginBottom: 24, border: "1px solid var(--border2)", background: "var(--bg2)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 20 }}>📊</span>
+                        <div style={{ fontSize: 18, fontWeight: 600 }}>Holistic Risk &amp; Friction-Adjusted Arbitrage Model</div>
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 4, lineHeight: 1.6 }}>
+                        Converts non-tangibles (administrative friction, compliance overhead, audit risk, infrastructure MVT time penalty, and strategic travel) into quantitative USD/yr metrics.
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span className={`badge ${enableNT ? "badge-green" : ""}`}>
+                        {enableNT ? "✓ Non-Tangibles Active" : "Non-Tangibles Disabled"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Comprehensive Budget Table */}
+                  <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", marginBottom: 16 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ background: "var(--bg3)" }}>
+                          <th style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, color: "var(--text3)", textTransform: "uppercase" }}>Comprehensive Budget Component</th>
+                          <th style={{ padding: "10px 14px", textAlign: "right", fontSize: 11, color: "var(--blue)", textTransform: "uppercase" }}>Stay in {countryA} (Fully Loaded)</th>
+                          <th style={{ padding: "10px 14px", textAlign: "right", fontSize: 11, color: "var(--green)", textTransform: "uppercase" }}>Move to {countryB} (Optimized)</th>
+                          <th style={{ padding: "10px 14px", textAlign: "right", fontSize: 11, color: "var(--text3)", textTransform: "uppercase" }}>Net Relocation Delta</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[
+                          { label: "Gross Revenue (Baseline)", a: incomeUSD, b: incomeUSD, deltaText: "Identical Asset Engine", color: "var(--text)" },
+                          { label: "Income Tax (All-In)", a: -taxA, b: -taxB, deltaText: `+${fmt(taxA - taxB, "USD")} (Taxes Preserved)`, color: taxA > taxB ? "var(--green)" : "var(--red)" },
+                          { label: "Baseline Living Expenses", a: -expensesA, b: -expensesB, deltaText: `(${fmt(Math.abs(expensesB - expensesA), "USD")}) (School/Expat Surcharge)`, color: expensesB > expensesA ? "var(--red)" : "var(--green)" },
+                          { label: "10-Trip Strategic Travel / Anchor Costs", a: 0, b: -travelMove, deltaText: enableNT ? `(${fmt(travelMove, "USD")}) (Relationship Anchor)` : "—", color: "var(--text3)" },
+                          { label: "Infrastructure MVT Time Penalty", a: -infraStay, b: -infraMove, deltaText: enableNT ? `+${fmt(infraStay - infraMove, "USD")} (Friction Eradicated)` : "—", color: "var(--green)" },
+                          { label: "Compliance Time & Out-of-Pocket", a: -compCost, b: 0, deltaText: enableNT ? `+${fmt(compCost, "USD")} (Admin Peace)` : "—", color: "var(--green)" },
+                          { label: "Amortized Audit Risk Premium", a: -auditRisk, b: 0, deltaText: enableNT ? `+${fmt(auditRisk, "USD")} (Risk Exposure Wiped Out)` : "—", color: "var(--green)" },
+                          { label: "True Adjusted Net Annual Surplus", a: adjSurplusA, b: adjSurplusB, deltaText: `+${fmt(adjAnnualAdvantage, "USD")} / year`, bold: true, highlight: true },
+                        ].map((row, idx) => (
+                          <tr key={idx} style={{
+                            borderTop: "1px solid var(--border)",
+                            background: row.highlight ? "rgba(62,207,142,0.12)" : idx % 2 === 0 ? "transparent" : "var(--bg3)",
+                          }}>
+                            <td style={{ padding: "10px 14px", fontWeight: row.bold ? 700 : 400, fontSize: row.bold ? 13 : 12 }}>{row.label}</td>
+                            <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'IBM Plex Mono',monospace", color: row.a < 0 ? "var(--red)" : "var(--blue)", fontWeight: row.bold ? 700 : 400 }}>
+                              {row.a < 0 ? `(${fmt(Math.abs(row.a), "USD")})` : fmt(row.a, "USD")}
+                            </td>
+                            <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'IBM Plex Mono',monospace", color: row.b < 0 ? "var(--red)" : "var(--green)", fontWeight: row.bold ? 700 : 400 }}>
+                              {row.b < 0 ? `(${fmt(Math.abs(row.b), "USD")})` : fmt(row.b, "USD")}
+                            </td>
+                            <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'IBM Plex Mono',monospace", color: row.color || "var(--text)", fontWeight: row.bold ? 700 : 500, fontSize: row.bold ? 13 : 12 }}>
+                              {row.deltaText}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* 15-Year Wealth Slingshot Matrix */}
+                  <div style={{ background: "rgba(167,139,250,0.08)", border: "1px solid var(--purple2)", borderRadius: 10, padding: "18px 20px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 12 }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--purple)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                          🚀 15-Year Wealth Slingshot &amp; Compounding Matrix ({investReturnPct}% Return)
+                        </div>
+                        <div style={{ fontSize: 12, color: "var(--text2)", marginTop: 4 }}>
+                          Cumulative wealth accretion gap when reinvesting annual risk-adjusted surplus delta:
+                        </div>
+                      </div>
+                      <span className="badge badge-green" style={{ fontSize: 13, padding: "6px 12px" }}>
+                        💎 Net 15-Yr Advantage: +{fmt(slingshotDelta15, "USD")}
+                      </span>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 14 }}>
+                      <div className="metric-card" style={{ background: "var(--bg3)" }}>
+                        <div className="metric-label">Stay in {countryA} Matrix</div>
+                        <div className="metric-val" style={{ color: "var(--red)", fontSize: 17 }}>
+                          {fmt(cumA_adj, "USD")}
+                        </div>
+                        <div className="metric-sub">loaded with risk &amp; time drag</div>
+                      </div>
+                      <div className="metric-card" style={{ background: "var(--bg3)" }}>
+                        <div className="metric-label">Move to {countryB} Strategy</div>
+                        <div className="metric-val" style={{ color: "var(--green)", fontSize: 17 }}>
+                          {fmt(cumMove_adj, "USD")}
+                        </div>
+                        <div className="metric-sub">optimized, clean &amp; compounded</div>
+                      </div>
+                      <div className="metric-card" style={{ background: "var(--bg3)", border: "1px solid var(--purple2)" }}>
+                        <div className="metric-label">15-Yr Wealth Creation Gap</div>
+                        <div className="metric-val" style={{ color: "var(--purple)", fontSize: 17 }}>
+                          +{fmt(slingshotDelta15, "USD")}
+                        </div>
+                        <div className="metric-sub">+{fmt(adjAnnualAdvantage, "USD")}/yr @ {investReturnPct}% FV</div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 14, fontSize: 12, color: "var(--text2)", lineHeight: 1.65 }}>
+                      <strong>Key Takeaway:</strong> Factoring administrative friction, compliance overhead ({fmt(compCost, "USD")}/yr), audit risk ({fmt(auditRisk, "USD")}/yr), and infrastructure drag ({fmt(infraStay, "USD")}/yr) elevates your true annual capital delta to <strong>+{fmt(adjAnnualAdvantage, "USD")}/year</strong>. Over 15 years at {investReturnPct}% compounding, this generates an extra <strong>+{fmt(slingshotDelta15, "USD")}</strong> in net wealth.
+                    </div>
                   </div>
                 </div>
               );
